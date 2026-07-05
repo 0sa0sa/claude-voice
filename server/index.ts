@@ -18,7 +18,7 @@ const app = createApp(
 // Serve the built client (dist/) when it exists, for `npm run start`.
 app.use("/*", serveStatic({ root: "./dist" }));
 
-const port = Number(process.env.PORT ?? 8790);
+const port = Number(process.env.PORT ?? 8799);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(
     `claude-voice server: http://localhost:${info.port} (mode: ${useMock ? "mock" : "cli"})`,

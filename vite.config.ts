@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5183,
     proxy: {
       "/api": {
-        target: "http://localhost:8790",
+        target: `http://localhost:${process.env.CLAUDE_VOICE_API_PORT ?? 8799}`,
         changeOrigin: true,
       },
     },

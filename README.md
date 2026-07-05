@@ -7,7 +7,7 @@
 
 ```bash
 npm install
-npm run dev        # server(8790) + Vite(5183) を同時起動
+npm run dev        # server(8799) + Vite(5183) を同時起動
 ```
 
 ブラウザ(Chrome推奨)で http://localhost:5183 を開き、マイクボタンを押して話す。
@@ -24,13 +24,13 @@ npm run dev        # server(8790) + Vite(5183) を同時起動
 | CLI(既定) | `npm run dev` | ローカルの `claude` CLIをspawnし、`--resume`で会話継続 |
 | モック | `CLAUDE_VOICE_MOCK=1 npm run dev:server` | CLIなしで決定的応答(デモ/テスト用) |
 
-環境変数: `PORT`(既定8790)、`CLAUDE_VOICE_BIN`(claudeバイナリのパス上書き)、`CLAUDE_VOICE_MOCK=1`
+環境変数: `PORT`(既定8799)、`CLAUDE_VOICE_BIN`(claudeバイナリのパス上書き)、`CLAUDE_VOICE_MOCK=1`
 
 ### 本番ビルド
 
 ```bash
 npm run build      # 型チェック + dist/ 生成
-npm run start      # 8790でAPI+静的配信(http://localhost:8790)
+npm run start      # 8799でAPI+静的配信(http://localhost:8799)
 ```
 
 ## 仕組み
