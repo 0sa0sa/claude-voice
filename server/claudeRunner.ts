@@ -23,10 +23,14 @@ export function createCliRunner(): ChatRunner {
           "stream-json",
           "--include-partial-messages",
           "--verbose",
-          "--allowedTools",
+          // 会話レーンはツール禁止(高速・テキストのみ)。実作業は @@CV でタスクレーンへ回す。
+          // 注意: --allowedTools "" は「全許可」扱いになり、モデルがBash等を試して
+          // max-turns超過(error_max_turns)を起こす。全無効化は --tools "" が正しい。
+          "--tools",
           "",
+          // ツールを封じても稀にMCPツールを試す場合があるため、1手余裕を持たせて復帰させる。
           "--max-turns",
-          "1",
+          "3",
         ];
         if (systemPrompt) args.push("--append-system-prompt", systemPrompt);
         if (resumeSessionId) args.push("--resume", resumeSessionId);
@@ -90,7 +94,7 @@ export function createCliQuickAsk(): QuickAsk {
       const timeoutMs = opts?.timeoutMs ?? 3000;
       const child = spawn(
         CLAUDE_BIN,
-        ["-p", "--model", "haiku", "--allowedTools", "", "--max-turns", "1"],
+        ["-p", "--model", "haiku", "--tools", "", "--max-turns", "1"],
         { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } },
       );
       const timer = setTimeout(() => {
