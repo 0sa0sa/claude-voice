@@ -4,6 +4,7 @@ import type { DirectiveResult } from "./hooks/useChat";
 import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
 import { useTTS } from "./hooks/useTTS";
 import {
+  detectSendCommand,
   fullText,
   shouldQueryInterjection,
   type TranscriptState,
@@ -126,17 +127,28 @@ export default function App() {
       const message = text.trim();
       if (!message || busyRef.current) return;
       lastQueriedRef.current = "";
+      tts.cancel(); // 送信したら進行中の読み上げは止める
       speech.reset();
       void send(message);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [send],
+    [send, tts],
   );
   const sendTranscriptRef = useRef(sendTranscript);
 
   const onTranscriptUpdate = useCallback(
     (t: TranscriptState) => {
       const text = fullText(t);
+
+      // 末尾に「送信」等の音声コマンドが来たら即送信(本文がある場合のみ)
+      const sendCmd = detectSendCommand(text);
+      if (sendCmd.triggered && sendCmd.body) {
+        if (interjectTimerRef.current) clearTimeout(interjectTimerRef.current);
+        if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
+        sendTranscriptRef.current(sendCmd.body);
+        return;
+      }
+
       if (interjectTimerRef.current) clearTimeout(interjectTimerRef.current);
       if (shouldQueryInterjection(lastQueriedRef.current, text)) {
         interjectTimerRef.current = setTimeout(() => queryInterjection(text), INTERJECT_DEBOUNCE_MS);
@@ -224,6 +236,7 @@ export default function App() {
 
   const submitDraft = () => {
     if (draft.trim()) {
+      tts.cancel(); // 送信したら進行中の読み上げは止める
       void send(draft.trim());
       setDraft("");
     }
@@ -241,6 +254,7 @@ export default function App() {
         <div className="header-right">
           <select
             className="project-select"
+            name="project"
             aria-label="プロジェクト"
             value={activeProject ?? ""}
             onChange={(e) => void switchProject(e.target.value)}
@@ -274,7 +288,8 @@ export default function App() {
             <p className="empty-title">マイクをオンにして話しかけてください</p>
             <p className="empty-sub">
               「◯◯のテストを回して」「新しいアプリを作って」— 話すだけでプロジェクトの選択から
-              実装タスクの実行・進捗確認まで進められます。
+              実装タスクの実行・進捗確認まで進められます。文末に「送信」と言えばその場で送れます
+              (2秒黙っても自動送信)。
               {!speech.supported && " ※このブラウザは音声認識非対応です。Chromeを使うか、下の入力欄をどうぞ。"}
             </p>
           </div>
