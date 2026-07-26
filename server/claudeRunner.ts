@@ -119,7 +119,9 @@ export function createCliQuickAsk(): QuickAsk {
  * Unlike the chat lane this can edit files and run commands.
  */
 export function createCliTaskSpawner(): TaskSpawner {
-  const permissionMode = process.env.CLAUDE_VOICE_PERMISSION_MODE ?? "acceptEdits";
+  // 既定はハンズフリー優先(ユーザーのjarvis運用に合わせる)。ヘッドレス-pでは
+  // acceptEditsだとBash系が許可待ちにならず失敗するため、絞りたい場合のみ環境変数で上書き。
+  const permissionMode = process.env.CLAUDE_VOICE_PERMISSION_MODE ?? "bypassPermissions";
   return ({ instruction, cwd, onEvent, signal }) =>
     new Promise((resolve, reject) => {
       const child = spawn(
