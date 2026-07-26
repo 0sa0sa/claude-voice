@@ -20,7 +20,13 @@ Claude Codeとのやりとりを音声入出力で行うための構成。結論
 
 ## 使い方
 
-任意のClaude Codeセッションで:
+ターミナルで一言:
+
+```
+jarvis                        # ~/.local/bin/jarvis — Claude Codeを音声会話モードで起動
+```
+
+または任意のClaude Codeセッションで:
 
 ```
 /voicemode:converse           # 音声会話開始(以降ずっと音声でやりとり)
@@ -74,7 +80,10 @@ VOICEMODE_WHISPER_LANGUAGE=ja      # 文字起こしを日本語固定(autoよ�
 
 1. **STT疎通**: `say -v Kyoko`で生成した「明日の朝九時に会議の予定を入れてください」を
    whisperサーバー(port 2022)に投げて認識成功。baseモデルでは「朝九時→朝食事」の
-   誤認識があったため large-v3-turbo に切り替え。
+   誤認識があったため large-v3-turbo に切り替え → **「明日の朝9時に会議の予定を
+   入れてください。」と完全一致、処理1.8秒**(M2, Metal)。
+   ※voicemode組込みダウンローダは1.47GBで停止したため、HuggingFaceから
+   `curl -C -` で直接レジュームして完了(正規サイズ1,624,555,275バイト一致)。
 2. **TTS**: Kokoro(port 8880)に日本語テキストをPOST → 24kHz WAV生成成功(voice=jf_alpha)。
 3. **完全ループバック**: KokoroのTTS出力をWhisperに再入力 →
    「こんにちはジャービスです 音声システムのテストをしています」と**一字一句正確に**認識。
