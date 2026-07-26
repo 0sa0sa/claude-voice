@@ -66,6 +66,40 @@ VOICEMODE_WHISPER_LANGUAGE=ja      # 文字起こしを日本語固定(autoよ�
 - **初回起動が遅い**: Kokoroは初回にPython依存+モデル(~300MB)をダウンロードする。
 - **ポート**: whisper=2022, kokoro=8880。既存アプリ(8787/8788/8791/8799)とは干渉しない。
 
+## セキュリティ (2026-07-26 ハードニング済み)
+
+- **ローカルバインド**: whisper/kokoroはインストール直後は`0.0.0.0`(LAN全体に公開)で起動する。
+  両起動スクリプトを`127.0.0.1`に修正済み(ループバックテストで機能維持を確認)。
+  - 対象: `~/.voicemode/services/whisper/bin/start-whisper-server.sh`(2箇所)、
+    `~/.voicemode/services/kokoro/start-gpu_mac.sh`
+  - **注意: `voicemode service install --force`で再インストールするとこの修正は消える**。
+    再インストール後は `lsof -nP -iTCP -sTCP:LISTEN | grep -E ':2022|:8880'` で
+    `127.0.0.1`になっているか確認し、必要なら再修正。
+- **プライバシー**: STT/TTSとも完全ローカル処理。APIキー未設定=音声データは外部送信されない。
+  録音・書き起こしの保存はデフォルト無効(`VOICEMODE_SAVE_*`)で、~/.voicemode/audioは空を確認。
+- **HTTPサーブモード(`voicemode serve`)は未使用**。過去のCVE類(X-Forwarded-For信頼問題
+  GHSA-2qvv-vjq9-g5r4)はserveモードのみの話で、stdio接続の本構成には非該当。
+- **サプライチェーン**: mbailey/voicemode(MIT・活発)+PyPI依存を信頼する構成。
+  プラグインはClaude Codeの全イベントフックでスクリプトを実行する点は認識しておく。
+  自動更新はされない(更新は手動コマンドのみ)ので、意図しないコード変更は入らない。
+- macOSファイアウォールは無効のまま(システム全体の設定なので変更していない)。
+  localhostバインド済みのため音声サービスに関しては必須ではないが、有効化推奨。
+
+## アップデート運用
+
+```bash
+claude plugin marketplace update voicemode   # マーケットプレイス定義を更新
+claude plugin update voicemode@voicemode     # プラグイン本体を更新
+uv tool upgrade voice-mode                   # グローバルCLI(MCPが実際にspawnする方)を更新
+```
+
+- **プラグインとCLIは必ずセットで更新**(バージョンずれ防止。MCP=グローバルCLI、
+  フック=プラグインキャッシュ側が動くため)。
+- whisper.cpp/Kokoro本体の更新: `voicemode service install whisper --force`(再ビルド)。
+  → 上記の127.0.0.1修正が消えるので再適用を忘れずに。
+- Whisperモデル・Kokoroモデルは更新不要(ファイル固定)。
+- 更新後の動作確認: `voicemode status` と、このdocの検証結果セクションのcurlループバック。
+
 ## 補完レイヤー・代替手段 (リサーチ結果より)
 
 - **公式 `/voice`** (Claude Code本体, 2026-03頃から段階ロールアウト): スペースキー長押しの
