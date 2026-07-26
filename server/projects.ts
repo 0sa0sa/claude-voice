@@ -5,6 +5,18 @@ export interface ProjectInfo {
   name: string;
   hasGit: boolean;
   hasPackageJson: boolean;
+  /** プロジェクトディレクトリのmtime (ms) */
+  updatedAt: number;
+}
+
+/** 一覧に出す「最近触ったプロジェクト」の既定閾値 */
+export const DEFAULT_RECENT_DAYS = 30;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface ScanOptions {
+  /** 最終更新がこの日数以内のものだけ返す。null で全件。省略時は DEFAULT_RECENT_DAYS */
+  maxAgeDays?: number | null;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -16,17 +28,29 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export async function scanProjects(root: string): Promise<ProjectInfo[]> {
+export async function scanProjects(root: string, opts: ScanOptions = {}): Promise<ProjectInfo[]> {
+  const maxAgeDays = opts.maxAgeDays === undefined ? DEFAULT_RECENT_DAYS : opts.maxAgeDays;
   const entries = await readdir(root, { withFileTypes: true });
   const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("."));
   const projects = await Promise.all(
-    dirs.map(async (d) => ({
-      name: d.name,
-      hasGit: await exists(join(root, d.name, ".git")),
-      hasPackageJson: await exists(join(root, d.name, "package.json")),
-    })),
+    dirs.map(async (d) => {
+      try {
+        const s = await stat(join(root, d.name));
+        return {
+          name: d.name,
+          hasGit: await exists(join(root, d.name, ".git")),
+          hasPackageJson: await exists(join(root, d.name, "package.json")),
+          updatedAt: s.mtimeMs,
+        };
+      } catch {
+        return null; // スキャン中に消えたディレクトリは無視
+      }
+    }),
   );
-  return projects.sort((a, b) => a.name.localeCompare(b.name));
+  const cutoff = maxAgeDays === null ? -Infinity : Date.now() - maxAgeDays * DAY_MS;
+  return projects
+    .filter((p): p is ProjectInfo => p !== null && p.updatedAt >= cutoff)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

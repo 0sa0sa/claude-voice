@@ -1,8 +1,10 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { resolveProjectPath, scanProjects } from "./projects.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const root = mkdtempSync(join(tmpdir(), "cv-projects-"));
 mkdirSync(join(root, "alpha", ".git"), { recursive: true });
@@ -26,6 +28,41 @@ describe("scanProjects", () => {
     const names = (await scanProjects(root)).map((p) => p.name);
     expect(names).not.toContain(".hidden");
     expect(names).not.toContain("not-a-dir.txt");
+  });
+});
+
+describe("scanProjects recency filter", () => {
+  // 専用root: fresh(今)/stale(40日前)/edge(29日前) のmtimeを持つ3プロジェクト
+  const recentRoot = mkdtempSync(join(tmpdir(), "cv-recent-"));
+  mkdirSync(join(recentRoot, "fresh"));
+  mkdirSync(join(recentRoot, "stale"));
+  mkdirSync(join(recentRoot, "edge"));
+  const now = Date.now();
+  utimesSync(join(recentRoot, "stale"), new Date(now - 40 * DAY_MS), new Date(now - 40 * DAY_MS));
+  utimesSync(join(recentRoot, "edge"), new Date(now - 29 * DAY_MS), new Date(now - 29 * DAY_MS));
+
+  afterAll(() => rmSync(recentRoot, { recursive: true, force: true }));
+
+  it("excludes projects not touched within the default 30 days", async () => {
+    const names = (await scanProjects(recentRoot)).map((p) => p.name);
+    expect(names).toEqual(["edge", "fresh"]);
+  });
+
+  it("includes all projects when maxAgeDays is null", async () => {
+    const names = (await scanProjects(recentRoot, { maxAgeDays: null })).map((p) => p.name);
+    expect(names).toEqual(["edge", "fresh", "stale"]);
+  });
+
+  it("respects a custom maxAgeDays threshold", async () => {
+    const names = (await scanProjects(recentRoot, { maxAgeDays: 7 })).map((p) => p.name);
+    expect(names).toEqual(["fresh"]);
+  });
+
+  it("reports updatedAt from the directory mtime", async () => {
+    const projects = await scanProjects(recentRoot, { maxAgeDays: null });
+    const stale = projects.find((p) => p.name === "stale")!;
+    expect(stale.updatedAt).toBeGreaterThan(now - 41 * DAY_MS);
+    expect(stale.updatedAt).toBeLessThan(now - 39 * DAY_MS);
   });
 });
 
