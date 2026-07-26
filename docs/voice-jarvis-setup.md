@@ -23,7 +23,7 @@ Claude Codeとのやりとりを音声入出力で行うための構成。結論
 ターミナルで一言:
 
 ```
-jarvis                        # ~/.local/bin/jarvis — Claude Codeを音声会話モードで起動
+jarvis                        # ~/.local/bin/jarvis — 音声会話モードで起動(--dangerously-skip-permissions付き=許可プロンプトなしの完全ハンズフリー)
 ```
 
 または任意のClaude Codeセッションで:
