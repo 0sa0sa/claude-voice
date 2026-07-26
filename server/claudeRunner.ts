@@ -126,7 +126,7 @@ export function createCliTaskSpawner(): TaskSpawner {
   // 既定はハンズフリー優先(ユーザーのjarvis運用に合わせる)。ヘッドレス-pでは
   // acceptEditsだとBash系が許可待ちにならず失敗するため、絞りたい場合のみ環境変数で上書き。
   const permissionMode = process.env.CLAUDE_VOICE_PERMISSION_MODE ?? "bypassPermissions";
-  return ({ instruction, cwd, onEvent, signal }) =>
+  return ({ instruction, cwd, resumeSessionId, onEvent, signal }) =>
     new Promise((resolve, reject) => {
       const child = spawn(
         CLAUDE_BIN,
@@ -138,6 +138,8 @@ export function createCliTaskSpawner(): TaskSpawner {
           "--verbose",
           "--permission-mode",
           permissionMode,
+          // 前回タスクのセッションを引き継ぐ(同じcwdのセッションのみ有効)
+          ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
         ],
         { cwd, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } },
       );
@@ -149,14 +151,22 @@ export function createCliTaskSpawner(): TaskSpawner {
       signal.addEventListener("abort", onAbort, { once: true });
 
       let resultText = "";
+      let sessionId: string | undefined;
       let stderr = "";
       const buf = new LineBuffer();
       const handleLines = (lines: string[]) => {
         for (const line of lines) {
           for (const tool of parseToolUses(line)) onEvent({ kind: "tool", name: tool });
           const e = parseClaudeLine(line);
+          if (e?.kind === "session" && e.sessionId) {
+            sessionId = e.sessionId;
+            onEvent({ kind: "session", sessionId: e.sessionId });
+          }
           if (e?.kind === "delta" && e.text) onEvent({ kind: "delta", text: e.text });
-          if (e?.kind === "result") resultText = e.text ?? "";
+          if (e?.kind === "result") {
+            resultText = e.text ?? "";
+            if (e.sessionId) sessionId = e.sessionId;
+          }
           if (e?.kind === "error") onEvent({ kind: "error", text: e.text });
         }
       };
@@ -173,7 +183,7 @@ export function createCliTaskSpawner(): TaskSpawner {
         signal.removeEventListener("abort", onAbort);
         handleLines(buf.flush());
         if (signal.aborted) reject(new Error("中止されました"));
-        else if (code === 0 || resultText) resolve({ text: resultText });
+        else if (code === 0 || resultText) resolve({ text: resultText, sessionId });
         else reject(new Error(`タスクが異常終了しました (code ${code}): ${stderr.slice(0, 400)}`));
       });
 
@@ -184,14 +194,17 @@ export function createCliTaskSpawner(): TaskSpawner {
 
 /** Mock task spawner: pretends to work for a moment, then succeeds. */
 export function createMockTaskSpawner(): TaskSpawner {
-  return async ({ instruction, onEvent, signal }) => {
+  return async ({ instruction, resumeSessionId, onEvent, signal }) => {
+    const sessionId = `mock-task-${Math.random().toString(36).slice(2, 8)}`;
+    onEvent({ kind: "session", sessionId });
     onEvent({ kind: "tool", name: "Bash: echo mock" });
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => setTimeout(r, 400));
       if (signal.aborted) throw new Error("中止されました");
       onEvent({ kind: "delta", text: `作業中(${i + 1}/3)…` });
     }
-    return { text: `(モック) 「${instruction.slice(0, 30)}」を完了しました` };
+    const prefix = resumeSessionId ? `(モック/引き継ぎ ${resumeSessionId}) ` : "(モック) ";
+    return { text: `${prefix}「${instruction.slice(0, 30)}」を完了しました`, sessionId };
   };
 }
 
