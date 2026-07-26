@@ -13,6 +13,8 @@ export interface DirectiveResult {
   detail?: string;
   taskId?: string;
   project?: string;
+  /** fix_transcript: 音声誤認識をLLMが文脈補正した後の発話全文 */
+  corrected?: string;
 }
 
 let idCounter = 0;
@@ -37,6 +39,15 @@ export function useChat(
 
   const addSystem = useCallback((text: string) => {
     setMessages((prev) => [...prev, { id: nextId(), role: "system", text }]);
+  }, []);
+
+  /** 直近のユーザー発話バブルの本文を差し替える(音声誤認識の文脈補正用)。 */
+  const patchLastUserMessage = useCallback((text: string) => {
+    setMessages((prev) => {
+      const idx = prev.map((m) => m.role).lastIndexOf("user");
+      if (idx === -1) return prev;
+      return prev.map((m, i) => (i === idx ? { ...m, text } : m));
+    });
   }, []);
 
   const send = useCallback(
@@ -106,5 +117,5 @@ export function useChat(
     [browserSessionId],
   );
 
-  return { messages, busy, send, addInterjection, addSystem };
+  return { messages, busy, send, addInterjection, addSystem, patchLastUserMessage };
 }
