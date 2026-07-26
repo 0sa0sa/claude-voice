@@ -122,10 +122,23 @@ export default function App() {
     [addInterjection, tts],
   );
 
+  // 二重送信ガード:
+  // - sendGuardRef: busy state が反映される前の連続発火を同期的に弾く
+  // - lastSentRef: reset後もブラウザの認識結果が同一発話を再発火するため、
+  //   同じ本文の連続送信を抑制(busyサイクルをまたぐ再発火にも効く)
+  const sendGuardRef = useRef(false);
+  const lastSentRef = useRef("");
+  useEffect(() => {
+    if (!busy) sendGuardRef.current = false;
+  }, [busy]);
+
   const sendTranscript = useCallback(
     (text: string) => {
       const message = text.trim();
-      if (!message || busyRef.current) return;
+      if (!message || busyRef.current || sendGuardRef.current) return;
+      if (message === lastSentRef.current) return; // 同一発話の再発火は無視
+      sendGuardRef.current = true;
+      lastSentRef.current = message;
       lastQueriedRef.current = "";
       tts.cancel(); // 送信したら進行中の読み上げは止める
       speech.reset();
@@ -135,6 +148,7 @@ export default function App() {
     [send, tts],
   );
   const sendTranscriptRef = useRef(sendTranscript);
+  const speechResetRef = useRef<() => void>(() => {});
 
   const onTranscriptUpdate = useCallback(
     (t: TranscriptState) => {
@@ -146,6 +160,9 @@ export default function App() {
         if (interjectTimerRef.current) clearTimeout(interjectTimerRef.current);
         if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
         sendTranscriptRef.current(sendCmd.body);
+        // 送信された/抑制されたに関わらずバッファを掃除。認識結果の再発火が
+        // 累積して別本文を生み二重送信になるのを断つ。
+        speechResetRef.current();
         return;
       }
 
@@ -166,6 +183,7 @@ export default function App() {
 
   const speech = useSpeechRecognition({ onUpdate: onTranscriptUpdate });
   sendTranscriptRef.current = sendTranscript;
+  speechResetRef.current = speech.reset;
 
   useEffect(() => {
     fetch("/api/health")
@@ -361,7 +379,14 @@ export default function App() {
         <div className="controls">
           <button
             className={`mic ${speech.listening ? "mic-on" : ""}`}
-            onClick={() => (speech.listening ? speech.stop() : speech.start())}
+            onClick={() => {
+              if (speech.listening) {
+                speech.stop();
+              } else {
+                lastSentRef.current = ""; // 録音を入れ直したら同一発話ガードを解除
+                speech.start();
+              }
+            }}
             disabled={!speech.supported}
             aria-pressed={speech.listening}
             aria-label={speech.listening ? "マイクを止める" : "マイクを開始"}
