@@ -212,7 +212,10 @@ export default function App() {
   };
 
   const cancelTask = async (id: string) => {
-    await fetch(`/api/tasks/${id}/cancel`, { method: "POST" }).catch(() => {});
+    await fetch(`/api/tasks/${id}/cancel`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    }).catch(() => {});
     void refreshTasks();
   };
 

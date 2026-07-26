@@ -215,3 +215,15 @@ describe("POST /api/interject", () => {
     expect(((await res.json()) as any).interject).toBe(true);
   });
 });
+
+describe("security hardening", () => {
+  it("rejects POSTs without application/json (CSRF via simple requests)", async () => {
+    const app = createApp(makeDeps());
+    const res = await app.request("/api/tasks", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify({ project: "demo", instruction: "rm -rf" }),
+    });
+    expect(res.status).toBe(415);
+  });
+});

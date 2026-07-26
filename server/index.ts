@@ -29,7 +29,8 @@ const app = createApp({
 app.use("/*", serveStatic({ root: "./dist" }));
 
 const port = Number(process.env.PORT ?? 8799);
-serve({ fetch: app.fetch, port }, (info) => {
+// タスクはフル権限で動くため、リッスンはループバック限定(LAN露出させない)
+serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) => {
   console.log(
     `claude-voice server: http://localhost:${info.port} (mode: ${useMock ? "mock" : "cli"}, projects: ${projectsRoot})`,
   );

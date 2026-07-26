@@ -75,6 +75,15 @@ export function createApp(deps: AppDeps) {
   const app = new Hono();
   const sessions = new SessionStore();
 
+  // CSRF対策: 変更系はapplication/jsonを必須にする。text/plainの単純リクエストは
+  // CORSプリフライトを経ずに届くため、ここで弾かないと外部サイトからタスクを起動できてしまう。
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method === "POST" && !c.req.header("content-type")?.includes("application/json")) {
+      return c.json({ error: "content-type: application/json required" }, 415);
+    }
+    await next();
+  });
+
   app.get("/api/health", (c) => c.json({ ok: true, mode: deps.runner.mode }));
 
   app.get("/api/projects", async (c) => {
