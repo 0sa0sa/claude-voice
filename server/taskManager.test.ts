@@ -286,6 +286,66 @@ describe("TaskManager", () => {
     });
   });
 
+  describe("setProject (プロジェクト付け替え)", () => {
+    it("reassigns the project of a finished task", async () => {
+      const tm = new TaskManager(async () => ({ text: "ok" }));
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      expect(tm.setProject(task.id, "b")).toBe(true);
+      expect(tm.get(task.id)!.project).toBe("b");
+      expect(tm.list()[0].project).toBe("b");
+    });
+
+    it("reassigns failed and cancelled tasks too", async () => {
+      const tm = new TaskManager(async () => {
+        throw new Error("boom");
+      });
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      expect(tm.get(task.id)!.status).toBe("failed");
+      expect(tm.setProject(task.id, "b")).toBe(true);
+      expect(tm.get(task.id)!.project).toBe("b");
+    });
+
+    it("refuses running tasks because they are tied to their workspace", async () => {
+      const never = deferred<{ text: string }>();
+      const tm = new TaskManager(async () => never.promise);
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      expect(tm.setProject(task.id, "b")).toBe(false);
+      expect(tm.get(task.id)!.project).toBe("a");
+      never.resolve({ text: "ok" });
+      await tick();
+    });
+
+    it("returns false for unknown task ids", () => {
+      const tm = new TaskManager(async () => ({ text: "ok" }));
+      expect(tm.setProject("nope", "b")).toBe(false);
+    });
+
+    it("is metadata-only: worktree and session info stay untouched", async () => {
+      const tm = new TaskManager(
+        async ({ onEvent }) => {
+          onEvent({ kind: "session", sessionId: "sess-1" });
+          return { text: "ok" };
+        },
+        undefined,
+        async ({ taskId }) => ({
+          kind: "worktree",
+          worktreePath: `/wt/a-${taskId}`,
+          branch: `task/${taskId}`,
+        }),
+      );
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      expect(tm.setProject(task.id, "b")).toBe(true);
+      const done = tm.get(task.id)!;
+      expect(done.project).toBe("b");
+      expect(done.worktreePath).toBe(`/wt/a-${task.id}`);
+      expect(done.branch).toBe(`task/${task.id}`);
+      expect(done.sessionId).toBe("sess-1");
+    });
+  });
+
   describe("resolve", () => {
     it("resolves by exact task id", async () => {
       const tm = new TaskManager(async () => ({ text: "ok" }));
@@ -476,6 +536,76 @@ describe("TaskManager", () => {
       await tick();
       expect(cwds).toEqual([]);
       expect(tm.get(task.id)!.status).toBe("cancelled");
+    });
+  });
+
+  describe("live progress (実行中の途中経過)", () => {
+    it("accumulates streamed deltas into liveText while running", async () => {
+      const d = deferred<{ text: string }>();
+      const tm = new TaskManager(async ({ onEvent }) => {
+        onEvent({ kind: "delta", text: "テストを" });
+        onEvent({ kind: "delta", text: "実行中…" });
+        return d.promise;
+      });
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      // 実行中でも途中経過(ストリーム出力の連結)が読める
+      expect(tm.get(task.id)!.status).toBe("running");
+      expect(tm.get(task.id)!.liveText).toBe("テストを実行中…");
+      d.resolve({ text: "done" });
+      await tick();
+      // 完了後も最後の途中経過は残る
+      expect(tm.get(task.id)!.liveText).toBe("テストを実行中…");
+    });
+
+    it("does not flood the event log with delta fragments, so tool events stay visible", async () => {
+      const tm = new TaskManager(async ({ onEvent }) => {
+        onEvent({ kind: "tool", name: "Bash: npm test" });
+        for (let i = 0; i < 300; i++) onEvent({ kind: "delta", text: `t${i}` });
+        return { text: "ok" };
+      });
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      const done = tm.get(task.id)!;
+      // delta断片はliveTextに集約し、イベントログはツール実行などの節目だけにする
+      expect(done.events.some((e) => e.kind === "delta")).toBe(false);
+      expect(done.events.some((e) => e.kind === "tool" && e.text === "Bash: npm test")).toBe(true);
+    });
+
+    it("clips liveText to the tail to avoid unbounded growth", async () => {
+      const chunk = "0123456789".repeat(10); // 100 chars
+      const tm = new TaskManager(async ({ onEvent }) => {
+        for (let i = 0; i < 300; i++) onEvent({ kind: "delta", text: chunk });
+        onEvent({ kind: "delta", text: "END" });
+        return { text: "ok" };
+      });
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      await tick();
+      const live = tm.get(task.id)!.liveText!;
+      expect(live.length).toBeLessThanOrEqual(8000);
+      // 残すのは末尾(最新の出力)側
+      expect(live.endsWith("END")).toBe(true);
+    });
+
+    it("keeps appending liveText across queued follow-up runs", async () => {
+      let pending: Array<(v: { text: string; sessionId?: string }) => void> = [];
+      let call = 0;
+      const spawner: TaskSpawner = ({ onEvent }) => {
+        call++;
+        onEvent({ kind: "session", sessionId: `sess-${call}` });
+        onEvent({ kind: "delta", text: call === 1 ? "前半の出力" : "後半の出力" });
+        return new Promise((res) => pending.push(res));
+      };
+      const tm = new TaskManager(spawner);
+      const task = tm.start({ project: "a", projectPath: "/tmp/a", instruction: "x" });
+      tm.appendInstruction(task.id, "続けて");
+      pending.shift()!({ text: "r1" });
+      await tick();
+      pending.shift()!({ text: "r2" });
+      await tick();
+      const live = tm.get(task.id)!.liveText!;
+      expect(live).toContain("前半の出力");
+      expect(live).toContain("後半の出力");
     });
   });
 

@@ -58,6 +58,16 @@ describe("scanProjects recency filter", () => {
     expect(names).toEqual(["fresh"]);
   });
 
+  it("keeps projects listed in include even when older than the cutoff", async () => {
+    const names = (await scanProjects(recentRoot, { include: ["stale"] })).map((p) => p.name);
+    expect(names).toEqual(["edge", "fresh", "stale"]);
+  });
+
+  it("ignores include names that do not exist on disk", async () => {
+    const names = (await scanProjects(recentRoot, { include: ["ghost"] })).map((p) => p.name);
+    expect(names).toEqual(["edge", "fresh"]);
+  });
+
   it("reports updatedAt from the directory mtime", async () => {
     const projects = await scanProjects(recentRoot, { maxAgeDays: null });
     const stale = projects.find((p) => p.name === "stale")!;

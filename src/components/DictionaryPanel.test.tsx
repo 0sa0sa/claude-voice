@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DictionaryPanel } from "./DictionaryPanel";
@@ -47,5 +47,23 @@ describe("DictionaryPanel", () => {
     await userEvent.type(screen.getByPlaceholderText("誤認識される読み"), "毎時");
     await userEvent.click(screen.getByRole("button", { name: "登録" }));
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it("does not add on Enter during IME composition, but does after composition ends", async () => {
+    const onAdd = vi.fn();
+    render(<DictionaryPanel entries={[]} onAdd={onAdd} onRemove={vi.fn()} />);
+    const right = screen.getByPlaceholderText("正しい表記");
+    fireEvent.change(screen.getByPlaceholderText("誤認識される読み"), {
+      target: { value: "毎時" },
+    });
+    fireEvent.change(right, { target: { value: "マージ" } });
+    fireEvent.compositionStart(right);
+    fireEvent.keyDown(right, { key: "Enter", isComposing: true });
+    fireEvent.compositionEnd(right);
+    expect(onAdd).not.toHaveBeenCalled();
+    fireEvent.keyDown(right, { key: "Enter", keyCode: 229 }); // isComposing未対応のフォールバック
+    expect(onAdd).not.toHaveBeenCalled();
+    fireEvent.keyDown(right, { key: "Enter", keyCode: 13 });
+    expect(onAdd).toHaveBeenCalledWith("毎時", "マージ");
   });
 });

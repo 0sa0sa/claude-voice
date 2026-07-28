@@ -107,13 +107,15 @@ describe("追いタスク(タスク選択とフォローアップ指示)", () =>
     expect(screen.queryByText(/追いタスク/)).not.toBeInTheDocument();
   });
 
-  it("実行中タスクのクリックでは選択されない(展開のみ)", async () => {
+  it("実行中タスクのクリックは追加指示の宛先として選択される(追いタスクにはならない)", async () => {
     const user = userEvent.setup();
     render(<App />);
     const body = await findTaskBody(/実行中タスク/);
     await user.click(body);
     expect(body).toHaveAttribute("aria-expanded", "true");
+    // 実行中は追いタスク(resume)ではなく追加指示の宛先になる
     expect(screen.queryByText(/追いタスク/)).not.toBeInTheDocument();
+    expect(screen.getByText(/追加指示の宛先/)).toBeInTheDocument();
   });
 
   it("チップの解除ボタンで選択をクリアできる", async () => {

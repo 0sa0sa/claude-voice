@@ -6,12 +6,15 @@ import { decideInterjection } from "./interjection.js";
 import type { ProjectInfo } from "./projects.js";
 import { SessionStore } from "./sessions.js";
 import type { Task, TaskManager } from "./taskManager.js";
+import type { ThreadLog } from "./threadLog.js";
 import type { ChatRunner, ClaudeEvent, QuickAsk } from "./types.js";
 
 export interface AppDeps {
   runner: ChatRunner;
   quickAsk: QuickAsk;
   taskManager: TaskManager;
+  /** 会話ログのスレッド保存(メイン会話とタスク別スレッドの分離)。省略時は記録も取得APIも無効 */
+  threadLog?: ThreadLog;
   /** 省略時は最近触ったプロジェクトのみ。{ all: true } で全件 */
   listProjects: (opts?: { all?: boolean }) => Promise<ProjectInfo[]>;
   /** Maps a project name (or "_root") to an absolute cwd, or null if unknown. */
@@ -38,6 +41,11 @@ const SYSTEM_STYLE = [
   "文脈から明らかな誤認識は正しい内容に読み替えて応答して(例:「店舗が大事」は音楽やリズムの文脈なら「テンポが大事」)。",
   '読み替えたときは @@CV {"action":"fix_transcript","corrected":"補正後の発話全文"} を1行追加して。確信が持てないときは読み替えず、確認もしない。',
   "タスクの進捗や結果を聞かれたら[状況]の内容から答えて。",
+  "画面の見た目を動かしたいとき(注目させたい、切り替えたいなど)は次のUI制御行を使って: ",
+  '特定のタスクにズームして注目させる @@CV {"action":"ui_focus_task","taskId":"#3"} 、',
+  'プロジェクトサイドバーの開閉 @@CV {"action":"ui_toggle_sidebar","open":false} 、',
+  'プロジェクトを一覧内でハイライトする @@CV {"action":"ui_highlight_project","project":"名前"} 。',
+  "UI制御行は会話の返答内容とは無関係なので、実際に画面を動かしたい場面でだけ使って。",
 ].join("");
 
 function summarizeTask(t: Task) {
@@ -116,6 +124,11 @@ export function createApp(deps: AppDeps) {
     const body = await c.req.json().catch(() => ({}));
     const project: unknown = body.project;
     const session = sessions.get(body.browserSessionId ?? "default");
+    // _rootは新規プロジェクト作成専用の擬似ターゲット。activeProjectにすると
+    // 以後projectを省略したタスクが全て_root(プロジェクトルート)に割り当てられてしまう
+    if (project === "_root") {
+      return c.json({ error: "_root はプロジェクトではないため切り替えられません" }, 400);
+    }
     if (typeof project !== "string" || !(await deps.resolveProject(project))) {
       return c.json({ error: `プロジェクト ${project} が見つかりません` }, 404);
     }
@@ -211,12 +224,36 @@ export function createApp(deps: AppDeps) {
   // :id はタスクID・連番("3")のどちらでも指定できる
   app.get("/api/tasks/:id", (c) => {
     const task = deps.taskManager.resolve(c.req.param("id"));
-    return task ? c.json({ ...summarizeTask(task), events: task.events }) : c.json({ error: "not found" }, 404);
+    return task
+      ? c.json({ ...summarizeTask(task), events: task.events, liveText: task.liveText ?? null })
+      : c.json({ error: "not found" }, 404);
   });
 
   app.post("/api/tasks/:id/cancel", (c) => {
     const task = deps.taskManager.resolve(c.req.param("id"));
     return c.json({ ok: task ? deps.taskManager.cancel(task.id) : false });
+  });
+
+  // タスクのプロジェクト付け替え(メタデータのみの変更)。付け替え先は存在する
+  // プロジェクトに限る。実行中タスクはworktree/cwdに紐付いて動作しているため不可
+  app.post("/api/tasks/:id/project", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const project = typeof body.project === "string" ? body.project.trim() : "";
+    if (!project) return c.json({ error: "project is required" }, 400);
+    // workspace APIと同じ_rootガード: 擬似ターゲットでありプロジェクトではない
+    if (project === "_root") {
+      return c.json({ error: "_root はプロジェクトではないため付け替えられません" }, 400);
+    }
+    const task = deps.taskManager.resolve(c.req.param("id"));
+    if (!task) return c.json({ error: "not found" }, 404);
+    if (!(await deps.resolveProject(project))) {
+      return c.json({ error: `プロジェクト ${project} が見つかりません` }, 404);
+    }
+    if (!deps.taskManager.setProject(task.id, project)) {
+      // エラーは読み上げられるため、タスクは口頭で分かる連番で示す
+      return c.json({ error: `タスク #${task.seq} は実行中のため付け替えできません` }, 409);
+    }
+    return c.json({ ok: true, task: summarizeTask(task) });
   });
 
   // 実行中タスクへの追加指示。現在の実行完了後に同じセッションを引き継いで消化される
@@ -232,6 +269,40 @@ export function createApp(deps: AppDeps) {
     return c.json({ ok: true });
   });
 
+  // 会話ログのスレッド取得API。threadLog未設定なら既存挙動のまま(ルート自体なし)
+  const threadLog = deps.threadLog;
+  if (threadLog) {
+    // タスクスレッドはタスクデータ(唯一の真実)からの導出なので、取得時に同期する
+    const syncThreads = () => threadLog.syncFromTasks(deps.taskManager.list());
+
+    app.get("/api/threads", (c) => {
+      syncThreads();
+      return c.json({
+        threads: threadLog.list().map((t) => ({
+          id: t.id,
+          kind: t.kind,
+          taskId: t.taskId ?? null,
+          project: t.project ?? null,
+          seq: t.seq ?? null,
+          messageCount: t.messages.length,
+          lastMessage: t.messages.at(-1) ?? null,
+        })),
+      });
+    });
+
+    // :id は "main"・タスクID・連番("3" / "#3")のいずれでも指定できる
+    app.get("/api/threads/:id", (c) => {
+      syncThreads();
+      const ref = c.req.param("id");
+      let thread = threadLog.get(ref);
+      if (!thread) {
+        const task = deps.taskManager.resolve(ref);
+        if (task) thread = threadLog.get(task.id);
+      }
+      return thread ? c.json(thread) : c.json({ error: "not found" }, 404);
+    });
+  }
+
   app.post("/api/chat", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const message: unknown = body.message;
@@ -245,6 +316,8 @@ export function createApp(deps: AppDeps) {
       const send = (event: string, data: unknown) =>
         stream.writeSSE({ event, data: JSON.stringify(data) });
       try {
+        // メイン会話(一対一)のログ。応答が失敗しても発話自体は残す
+        deps.threadLog?.appendMain("user", message, Date.now());
         const prompt = buildChatPrompt({
           message,
           projects: await deps.listProjects(),
@@ -273,6 +346,8 @@ export function createApp(deps: AppDeps) {
         for (const d of directives) {
           await send("directive", await executeDirective(d, session.activeProject, session));
         }
+        // ディレクティブのみで本文が空の応答はログに残さない
+        if (cleanText.trim()) deps.threadLog?.appendMain("assistant", cleanText, Date.now());
         await send("done", { text: cleanText });
       } catch (err) {
         await send("error", { message: err instanceof Error ? err.message : String(err) });
@@ -286,6 +361,14 @@ export function createApp(deps: AppDeps) {
     ): Promise<Record<string, unknown>> {
       switch (d.action) {
         case "switch_project": {
+          // workspace APIと同じ_rootガード: 切替を許すと以後の省略時タスクが全て_rootに落ちる
+          if (d.project === "_root") {
+            return {
+              action: d.action,
+              ok: false,
+              detail: "_root はプロジェクトではないため切り替えられません",
+            };
+          }
           const path = await deps.resolveProject(d.project);
           if (!path) {
             return { action: d.action, ok: false, detail: `プロジェクト ${d.project} が見つかりません` };
@@ -337,6 +420,14 @@ export function createApp(deps: AppDeps) {
         case "fix_transcript":
           // 表示中のユーザー発話をクライアント側で差し替えるだけ。読み上げはしない
           return { action: d.action, ok: true, corrected: d.corrected };
+        // UI制御系ディレクティブ: サーバー側の状態は変更せず、クライアントへそのまま
+        // 伝えて画面の演出(ズーム・サイドバー開閉・ハイライト)だけを行わせる
+        case "ui_focus_task":
+          return { action: d.action, ok: true, taskId: d.taskId };
+        case "ui_toggle_sidebar":
+          return { action: d.action, ok: true, open: d.open };
+        case "ui_highlight_project":
+          return { action: d.action, ok: true, project: d.project };
       }
     }
   });

@@ -15,6 +15,8 @@ export interface DirectiveResult {
   project?: string;
   /** fix_transcript: 音声誤認識をLLMが文脈補正した後の発話全文 */
   corrected?: string;
+  /** ui_toggle_sidebar: サイドバーを開いた状態にするか */
+  open?: boolean;
 }
 
 let idCounter = 0;

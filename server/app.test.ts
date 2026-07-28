@@ -110,6 +110,46 @@ describe("projects & workspace", () => {
   });
 });
 
+describe("_root guard (タスクが誤って_rootに割り当てられない)", () => {
+  it("rejects switching the workspace to _root (擬似ターゲットでありプロジェクトではない)", async () => {
+    const app = createApp(makeDeps());
+    await post(app, "/api/workspace", { browserSessionId: "b1", project: "demo" });
+    const res = await post(app, "/api/workspace", { browserSessionId: "b1", project: "_root" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error).toContain("切り替えられません");
+    // activeProjectは_rootにならず、以後projectを省略したタスクが_rootに落ちない
+    const list = await app.request("/api/projects?browserSessionId=b1");
+    expect(((await list.json()) as any).active).toBe("demo");
+  });
+
+  it("rejects switch_project directives targeting _root and keeps the active project", async () => {
+    const reply = '切り替えます。\n@@CV {"action":"switch_project","project":"_root"}';
+    const app = createApp(makeDeps({ runner: echoRunner(reply).runner }));
+    await post(app, "/api/workspace", { browserSessionId: "b1", project: "demo" });
+    const res = await post(app, "/api/chat", { browserSessionId: "b1", message: "ルートにして" });
+    const events = await readSSE(res);
+    const directive = events.find((e) => e.event === "directive");
+    expect(directive?.data.ok).toBe(false);
+    expect(directive?.data.detail).toContain("切り替えられません");
+    // 以後projectを省略して開始したタスクは_rootではなく元のactiveに割り当てられる
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", instruction: "x" })
+    ).json()) as any;
+    expect(task.project).toBe("demo");
+  });
+
+  it("still allows explicit start_task in _root for scaffolding new projects", async () => {
+    const app = createApp(makeDeps());
+    const res = await post(app, "/api/tasks", {
+      browserSessionId: "b1",
+      project: "_root",
+      instruction: "新規プロジェクトfooをディレクトリ作成から",
+    });
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as any).project).toBe("_root");
+  });
+});
+
 describe("tasks API", () => {
   it("starts a task in the active project and lists it", async () => {
     const pending: TaskSpawner = ({ signal }) =>
@@ -147,6 +187,34 @@ describe("tasks API", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  it("returns the streamed liveText in the task detail while running", async () => {
+    let emitDelta!: (text: string) => void;
+    const spawner: TaskSpawner = ({ onEvent, signal }) =>
+      new Promise((res) => {
+        onEvent({ kind: "tool", name: "Bash: npm test" });
+        emitDelta = (text) => onEvent({ kind: "delta", text });
+        signal.addEventListener("abort", () => res({ text: "" }));
+      });
+    const app = createApp(makeDeps({ spawner }));
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+
+    // 出力が届く前はliveTextはnull
+    const before = (await (await app.request(`/api/tasks/${task.id}`)).json()) as any;
+    expect(before.liveText).toBeNull();
+
+    emitDelta("テストを実行して");
+    emitDelta("います…");
+    const detail = (await (await app.request(`/api/tasks/${task.id}`)).json()) as any;
+    expect(detail.status).toBe("running");
+    expect(detail.liveText).toBe("テストを実行しています…");
+    // ツール実行状況はイベントログから読める
+    expect(detail.events.some((e: any) => e.kind === "tool" && e.text === "Bash: npm test")).toBe(
+      true,
+    );
   });
 
   it("cancels a running task via the API", async () => {
@@ -273,6 +341,96 @@ describe("task append instructions", () => {
     expect(systemPrompt).toContain("追加指示");
     // タスク参照は口頭で言いやすい連番で行うことを指示している
     expect(systemPrompt).toContain("連番");
+  });
+});
+
+describe("task project reassignment (POST /api/tasks/:id/project)", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("reassigns a finished task to another existing project", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps);
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+    await tick(); // タスク完了まで待つ
+
+    const res = await post(app, `/api/tasks/${task.id}/project`, { project: "hojokin-navi" });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as any;
+    expect(json.ok).toBe(true);
+    expect(json.task.project).toBe("hojokin-navi");
+
+    const list = (await (await app.request("/api/tasks")).json()) as any;
+    expect(list.tasks[0].project).toBe("hojokin-navi");
+  });
+
+  it("accepts a sequence-number task reference", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps);
+    await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" });
+    await tick();
+
+    const res = await post(app, "/api/tasks/1/project", { project: "hojokin-navi" });
+    expect(res.status).toBe(200);
+    expect(deps.taskManager.resolve("1")!.project).toBe("hojokin-navi");
+  });
+
+  it("rejects unknown target projects and keeps the task unchanged", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps);
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+    await tick();
+
+    const res = await post(app, `/api/tasks/${task.id}/project`, { project: "nope" });
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as any).error).toContain("見つかりません");
+    expect(deps.taskManager.get(task.id)!.project).toBe("demo");
+  });
+
+  it("rejects _root as a target (擬似ターゲットでありプロジェクトではない)", async () => {
+    const app = createApp(makeDeps());
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+    await tick();
+
+    const res = await post(app, `/api/tasks/${task.id}/project`, { project: "_root" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a missing or blank project", async () => {
+    const app = createApp(makeDeps());
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+    await tick();
+
+    expect((await post(app, `/api/tasks/${task.id}/project`, {})).status).toBe(400);
+    expect((await post(app, `/api/tasks/${task.id}/project`, { project: "  " })).status).toBe(400);
+  });
+
+  it("rejects running tasks with 409 (worktreeに紐付いて実行中のため)", async () => {
+    // 終わらないspawnerでタスクをrunningのままにする
+    const deps = makeDeps({ spawner: () => new Promise(() => {}) });
+    const app = createApp(deps);
+    const task = (await (
+      await post(app, "/api/tasks", { browserSessionId: "b1", project: "demo", instruction: "x" })
+    ).json()) as any;
+
+    const res = await post(app, `/api/tasks/${task.id}/project`, { project: "hojokin-navi" });
+    expect(res.status).toBe(409);
+    // 読み上げられるエラーもタスクは連番で示す
+    expect(((await res.json()) as any).error).toContain("タスク #1 は実行中");
+    expect(deps.taskManager.get(task.id)!.project).toBe("demo");
+  });
+
+  it("returns 404 for unknown tasks", async () => {
+    const app = createApp(makeDeps());
+    const res = await post(app, "/api/tasks/nope/project", { project: "demo" });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -703,6 +861,34 @@ describe("POST /api/chat (orchestrator)", () => {
     const directive = events.find((e) => e.event === "directive");
     expect(directive?.data).toEqual({ action: "fix_transcript", ok: true, corrected: "テンポが大事" });
     expect(events.find((e) => e.event === "done")?.data.text).toBe("テンポの件ですね。");
+  });
+
+  it("executes ui_focus_task directives and passes the taskId through unchanged", async () => {
+    const reply = '注目させますね。\n@@CV {"action":"ui_focus_task","taskId":"#3"}';
+    const app = createApp(makeDeps({ runner: echoRunner(reply).runner }));
+    const res = await post(app, "/api/chat", { browserSessionId: "b1", message: "タスク3に注目して" });
+    const events = await readSSE(res);
+    const directive = events.find((e) => e.event === "directive");
+    expect(directive?.data).toEqual({ action: "ui_focus_task", ok: true, taskId: "#3" });
+    expect(events.find((e) => e.event === "done")?.data.text).toBe("注目させますね。");
+  });
+
+  it("executes ui_toggle_sidebar directives and passes the open flag through", async () => {
+    const reply = 'サイドバーを閉じますね。\n@@CV {"action":"ui_toggle_sidebar","open":false}';
+    const app = createApp(makeDeps({ runner: echoRunner(reply).runner }));
+    const res = await post(app, "/api/chat", { browserSessionId: "b1", message: "サイドバーを閉じて" });
+    const events = await readSSE(res);
+    const directive = events.find((e) => e.event === "directive");
+    expect(directive?.data).toEqual({ action: "ui_toggle_sidebar", ok: true, open: false });
+  });
+
+  it("executes ui_highlight_project directives and passes the project name through", async () => {
+    const reply = 'ハイライトしますね。\n@@CV {"action":"ui_highlight_project","project":"demo"}';
+    const app = createApp(makeDeps({ runner: echoRunner(reply).runner }));
+    const res = await post(app, "/api/chat", { browserSessionId: "b1", message: "demoを目立たせて" });
+    const events = await readSSE(res);
+    const directive = events.find((e) => e.event === "directive");
+    expect(directive?.data).toEqual({ action: "ui_highlight_project", ok: true, project: "demo" });
   });
 
   it("instructs the orchestrator to fix obvious voice misrecognitions from context", async () => {

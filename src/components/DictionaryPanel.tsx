@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isImeComposing } from "../lib/imeGuard";
 import type { DictionaryEntry } from "../lib/speechDictionary";
 
 export interface DictionaryPanelProps {
@@ -61,7 +62,10 @@ export function DictionaryPanel({ entries, onAdd, onRemove }: DictionaryPanelPro
           value={right}
           placeholder="正しい表記"
           onChange={(e) => setRight(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
+          onKeyDown={(e) => {
+            // IME確定のEnterでは登録しない
+            if (e.key === "Enter" && !isImeComposing(e.nativeEvent)) submit();
+          }}
         />
         <button className="dict-add-btn" onClick={submit}>
           登録

@@ -54,15 +54,16 @@ describe("タスクの連番表示", () => {
     expect(within(panel).getByText("#2")).toBeInTheDocument();
   });
 
-  it("16進IDは本文に表示せず、連番バッジのtitleで補助的に参照できる", async () => {
+  it("16進IDは短縮表示し、全文は短縮IDのtitleで補助的に参照できる", async () => {
     render(<App />);
     const panel = await screen.findByRole("complementary", { name: "タスク" });
     await within(panel).findByText("#1");
-    // 口頭で伝えづらい16進IDはカード本文から外す
-    expect(within(panel).queryByText("abcd1234")).not.toBeInTheDocument();
-    expect(within(panel).queryByText("wxyz5678")).not.toBeInTheDocument();
-    // 必要なときはツールチップ(title)から確認できる
-    expect(within(panel).getByTitle(/abcd1234efgh/)).toBeInTheDocument();
-    expect(within(panel).getByTitle(/wxyz5678/)).toBeInTheDocument();
+    // カード本文には先頭8文字の短縮IDだけを見せる
+    expect(within(panel).getByText("abcd1234")).toBeInTheDocument();
+    expect(within(panel).getByText("wxyz5678")).toBeInTheDocument();
+    expect(within(panel).queryByText("abcd1234efgh")).not.toBeInTheDocument();
+    // 全文IDはツールチップ(title)から確認できる
+    expect(within(panel).getByTitle("ID: abcd1234efgh")).toBeInTheDocument();
+    expect(within(panel).getByTitle("ID: wxyz5678")).toBeInTheDocument();
   });
 });

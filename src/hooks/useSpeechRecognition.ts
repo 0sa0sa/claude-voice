@@ -35,6 +35,11 @@ export function useSpeechRecognition(opts?: {
 }): UseSpeechRecognition {
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptState>(emptyTranscript());
+  // transcriptの最新値をミラーする。次状態はこのrefから同期計算し、setTranscript の
+  // updater 内では副作用(onUpdate/ドラフト更新)を一切呼ばない。updater は
+  // React 19/StrictMode で複数回実行されるため、内側の setState は再レンダーに
+  // 反映されず、認識テキストが入力欄に出ない不具合の原因になる。
+  const transcriptRef = useRef<TranscriptState>(transcript);
   const recRef = useRef<any>(null);
   const keepAliveRef = useRef(false);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -72,26 +77,28 @@ export function useSpeechRecognition(opts?: {
       const isEcho = isEchoRef.current;
       const keptFinals = isEcho ? finals.filter((f) => !isEcho(f)) : finals;
       if (interim && isEcho?.(interim)) interim = "";
-      setTranscript((prev) => {
-        if (keptFinals.length === 0 && interim === prev.interim) return prev;
-        // 確定セグメントは、ユーザー辞書→プロジェクト名の誤認識補正→
-        // 「〜じゃなくて〜」等の訂正コマンド解釈の順で取り込む
-        const dictionary = dictionaryRef.current;
-        const next: TranscriptState = {
-          finals: keptFinals.reduce(
-            (acc, f) =>
-              integrateFinal(
-                acc,
-                dictionary?.length ? applyDictionary(f, dictionary) : f,
-                projectNamesRef.current,
-              ),
-            prev.finals,
-          ),
-          interim,
-        };
-        onUpdateRef.current?.(next);
-        return next;
-      });
+      const prev = transcriptRef.current;
+      if (keptFinals.length === 0 && interim === prev.interim) return;
+      // 確定セグメントは、ユーザー辞書→プロジェクト名の誤認識補正→
+      // 「〜じゃなくて〜」等の訂正コマンド解釈の順で取り込む
+      const dictionary = dictionaryRef.current;
+      const next: TranscriptState = {
+        finals: keptFinals.reduce(
+          (acc, f) =>
+            integrateFinal(
+              acc,
+              dictionary?.length ? applyDictionary(f, dictionary) : f,
+              projectNamesRef.current,
+            ),
+          prev.finals,
+        ),
+        interim,
+      };
+      // 次状態はrefから同期計算済み。setTranscriptは値渡しで純粋に反映し、
+      // 副作用(onUpdate)はupdaterの外で1回だけ呼ぶ
+      transcriptRef.current = next;
+      setTranscript(next);
+      onUpdateRef.current?.(next);
     };
     rec.onend = () => {
       // Chrome stops recognition after silence; restart while the mic is on.
@@ -140,7 +147,11 @@ export function useSpeechRecognition(opts?: {
     releaseMic();
   }, [releaseMic]);
 
-  const reset = useCallback(() => setTranscript(emptyTranscript()), []);
+  const reset = useCallback(() => {
+    const empty = emptyTranscript();
+    transcriptRef.current = empty;
+    setTranscript(empty);
+  }, []);
 
   useEffect(
     () => () => {

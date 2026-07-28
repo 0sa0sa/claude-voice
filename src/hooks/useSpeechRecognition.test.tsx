@@ -63,4 +63,17 @@ describe("useSpeechRecognition voice corrections", () => {
     act(() => emitFinal("次の発話"));
     expect(result.current.transcript.finals).toEqual(["最初の発話", "次の発話"]);
   });
+
+  it("invokes onUpdate with the new transcript for each final", () => {
+    const updates: string[] = [];
+    const { result } = renderHook(() =>
+      useSpeechRecognition({ onUpdate: (t) => updates.push(t.finals.join("")) }),
+    );
+    act(() => result.current.start());
+    act(() => emitFinal("こんにちは"));
+    act(() => emitFinal("元気ですか"));
+    // 送信前ドラフト表示はこのコールバック経由。確定ごとに最新の全文で呼ばれること
+    expect(updates.at(-1)).toBe("こんにちは元気ですか");
+    expect(updates).toContain("こんにちは");
+  });
 });

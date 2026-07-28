@@ -167,6 +167,16 @@ describe("TaskManager persistence", () => {
     expect(task.branch).toBe("task/saved001");
   });
 
+  it("persists the reassigned project to the store", async () => {
+    const tm = new TaskManager(async () => ({ text: "ok" }), store);
+    const task = tm.start({ project: "demo", projectPath: "/tmp/demo", instruction: "x" });
+    await tick();
+    expect(tm.setProject(task.id, "hojokin-navi")).toBe(true);
+    await tm.flush();
+    const saved = await store.load();
+    expect(saved[0].project).toBe("hojokin-navi");
+  });
+
   it("works without a store (flush resolves, nothing persisted)", async () => {
     const tm = new TaskManager(async () => ({ text: "ok" }));
     tm.start({ project: "demo", projectPath: "/tmp/demo", instruction: "x" });

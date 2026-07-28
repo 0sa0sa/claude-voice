@@ -17,6 +17,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export interface ScanOptions {
   /** 最終更新がこの日数以内のものだけ返す。null で全件。省略時は DEFAULT_RECENT_DAYS */
   maxAgeDays?: number | null;
+  /** recencyフィルタを免除する名前(お気に入りなど)。存在しない名前は無視 */
+  include?: string[];
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -48,8 +50,9 @@ export async function scanProjects(root: string, opts: ScanOptions = {}): Promis
     }),
   );
   const cutoff = maxAgeDays === null ? -Infinity : Date.now() - maxAgeDays * DAY_MS;
+  const include = new Set(opts.include ?? []);
   return projects
-    .filter((p): p is ProjectInfo => p !== null && p.updatedAt >= cutoff)
+    .filter((p): p is ProjectInfo => p !== null && (p.updatedAt >= cutoff || include.has(p.name)))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 

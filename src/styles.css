@@ -1,14 +1,18 @@
 :root {
-  --bg: #14151d;
-  --bg-raise: #1c1e29;
-  --ink: #eceae4;
-  --ink-dim: #9a9890;
-  --coral: #d97757;
-  --user-blue: #7fa6d9;
+  /* 藍色(インディゴ/濃紺)基調のダークテーマ。JARVIS風ホログラムUIを意識し、
+     --accent-glow はフォーカス・ハイライト等のインタラクティブ演出専用のシアングロー */
+  --bg: #0b0e1a;
+  --bg-raise: #141a30;
+  --ink: #e8ebf7;
+  --ink-dim: #8891b4;
+  --accent: #6c7bf5;
+  --accent-glow: #56e6ff;
+  --user-blue: #86a8e8;
   --amber: #e8b34b;
   --ok: #7ec97f;
   --err: #e06c5b;
-  --line: #2a2c3a;
+  --line: #262c4a;
+  --mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", "Cascadia Code", monospace;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
 }
 
@@ -25,16 +29,162 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent),
+    radial-gradient(ellipse 700px 500px at 100% 0%, color-mix(in srgb, var(--accent-glow) 8%, transparent), transparent),
+    var(--bg);
   color: var(--ink);
 }
 
 .app {
+  position: relative;
   height: 100%;
   max-width: 1280px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  isolation: isolate;
+}
+
+/* ---- hologram backdrop: grid + drifting particles for depth ---- */
+.hud-bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hud-grid {
+  position: absolute;
+  inset: -1px;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent-glow) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-glow) 7%, transparent) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 40%, transparent 90%);
+  animation: hud-grid-drift 26s linear infinite;
+  opacity: 0.6;
+}
+
+@keyframes hud-grid-drift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 420px, 420px 0; }
+}
+
+.hud-particle {
+  position: absolute;
+  bottom: -6px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent-glow);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent-glow) 80%, transparent);
+  opacity: 0;
+  animation: hud-particle-rise 14s ease-in infinite;
+}
+
+/* 8個それぞれに違う水平位置・遅延・所要時間を与え、単調な繰り返しに見えないようにする */
+.hud-particle:nth-child(2) { left: 8%; animation-duration: 17s; animation-delay: 0s; }
+.hud-particle:nth-child(3) { left: 20%; animation-duration: 12s; animation-delay: 3s; }
+.hud-particle:nth-child(4) { left: 34%; animation-duration: 19s; animation-delay: 6s; }
+.hud-particle:nth-child(5) { left: 50%; animation-duration: 15s; animation-delay: 1.5s; }
+.hud-particle:nth-child(6) { left: 63%; animation-duration: 21s; animation-delay: 8s; }
+.hud-particle:nth-child(7) { left: 78%; animation-duration: 13s; animation-delay: 4.5s; }
+.hud-particle:nth-child(8) { left: 88%; animation-duration: 18s; animation-delay: 10s; }
+.hud-particle:nth-child(9) { left: 95%; animation-duration: 16s; animation-delay: 2s; }
+
+@keyframes hud-particle-rise {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.55;
+  }
+  90% {
+    opacity: 0.25;
+  }
+  100% {
+    transform: translateY(-100vh) translateX(12px);
+    opacity: 0;
+  }
+}
+
+/* ---- hud-frame: SF UIのコーナーブラケット。パネルの四隅に切り欠きを描く ---- */
+.hud-frame {
+  position: relative;
+}
+
+.hud-frame::before,
+.hud-frame::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: color-mix(in srgb, var(--accent-glow) 65%, transparent);
+  pointer-events: none;
+}
+
+.hud-frame::before {
+  top: -1px;
+  left: -1px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.hud-frame::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+}
+
+/* ---- hud-boot: 起動時にスキャンラインが上から下へ走りながら展開する演出 ---- */
+.hud-boot {
+  position: relative;
+  animation: hud-boot-in 0.6s ease-out both;
+}
+
+.hud-boot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--accent-glow) 55%, transparent) 48%,
+    transparent 100%
+  );
+  transform: translateY(-100%);
+  animation: hud-scan-sweep 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes hud-boot-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hud-scan-sweep {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
 }
 
 /* ---- v3: two-column body (sidebar + main) ---- */
@@ -50,14 +200,97 @@ body {
   border-right: 1px solid var(--line);
   padding: 14px 10px;
   overflow-y: auto;
+  transition:
+    width 0.28s ease,
+    padding 0.28s ease,
+    opacity 0.2s ease,
+    transform 0.28s ease;
+}
+
+/* LLM側からの ui_toggle_sidebar ディレクティブ、またはヘッダーの手動トグルでスライドイン/アウト */
+.sidebar.is-collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
+  opacity: 0;
+  transform: translateX(-16px);
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .sidebar-title {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.15em;
   color: var(--ink-dim);
   margin: 0 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* お気に入り編集の開閉ボタンと、全プロジェクトから選ぶピッカー */
+.proj-edit {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.proj-edit:hover,
+.proj-edit[aria-expanded="true"] {
+  background: var(--bg-raise);
+  color: var(--ink);
+}
+
+.proj-picker {
+  margin: 0 4px 10px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raise);
+}
+
+.proj-picker-hint {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin: 0 0 6px;
+}
+
+.proj-picker-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.proj-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  padding: 4px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.proj-picker-row:hover {
+  color: var(--ink);
+}
+
+.proj-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .proj-list {
@@ -92,11 +325,25 @@ body {
   color: var(--ink);
 }
 
+/* ui_highlight_project ディレクティブによる自動選択・注目演出(数秒でフェードアウト) */
+.proj-row.is-highlighted {
+  animation: proj-highlight 2.4s ease-out;
+}
+
+@keyframes proj-highlight {
+  0% {
+    background: color-mix(in srgb, var(--accent-glow) 30%, var(--bg-raise));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-glow) 75%, transparent),
+      0 0 16px color-mix(in srgb, var(--accent-glow) 45%, transparent);
+    color: var(--ink);
+  }
+}
+
 .proj-active-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--coral);
+  background: var(--accent);
   flex-shrink: 0;
 }
 
@@ -109,7 +356,7 @@ body {
 }
 
 .count {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   min-width: 18px;
   padding: 1px 5px;
@@ -119,8 +366,8 @@ body {
 }
 
 .count-running {
-  background: color-mix(in srgb, var(--coral) 18%, transparent);
-  color: var(--coral);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
   animation: blink 1.6s ease-in-out infinite;
 }
 
@@ -148,6 +395,8 @@ body {
   justify-content: space-between;
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
+  /* 右上をダイヤゴナルカットしてSF HUD風の輪郭にする */
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
 }
 
 .brand {
@@ -157,7 +406,7 @@ body {
 }
 
 .brand-mark {
-  color: var(--coral);
+  color: var(--accent);
   font-size: 18px;
 }
 
@@ -173,8 +422,26 @@ body {
   gap: 14px;
 }
 
+/* プロジェクトサイドバーの開閉。ui_toggle_sidebar ディレクティブと同じ状態を手動でも操作できる */
+.sidebar-toggle {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle[aria-pressed="true"] {
+  background: var(--bg-raise);
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
 .mode-badge {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 11px;
   padding: 3px 10px;
   border-radius: 999px;
@@ -183,8 +450,8 @@ body {
 }
 
 .mode-badge.mode-cli {
-  color: var(--coral);
-  border-color: color-mix(in srgb, var(--coral) 40%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .tts-toggle {
@@ -242,7 +509,7 @@ body {
 .bubble-assistant {
   align-self: flex-start;
   background: var(--bg-raise);
-  border: 1px solid color-mix(in srgb, var(--coral) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .bubble-interjection {
@@ -254,7 +521,7 @@ body {
 
 .interject-label {
   display: block;
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   color: var(--amber);
   letter-spacing: 0.1em;
@@ -296,6 +563,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 左下をダイヤゴナルカット。ヘッダーの右上カットと対角に呼応させる */
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 18px 100%, 0 calc(100% - 18px));
 }
 
 .live-strip {
@@ -311,11 +580,13 @@ body {
 }
 
 .live-strip.on-air {
-  border-color: color-mix(in srgb, var(--coral) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 calc(4px + 22px * var(--mic-level, 0)) calc(1px + 4px * var(--mic-level, 0))
+    color-mix(in srgb, var(--accent-glow) 30%, transparent);
 }
 
 .live-label {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.15em;
   color: var(--ink-dim);
@@ -323,7 +594,7 @@ body {
 }
 
 .on-air .live-label {
-  color: var(--coral);
+  color: var(--accent);
   animation: blink 1.6s ease-in-out infinite;
 }
 
@@ -337,15 +608,17 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap; /* 長い未確定テキストは省略せず下の行に折り返す */
   align-items: baseline;
   gap: 4px;
   font-size: 14px;
   line-height: 1.5;
 }
 
-/* 認識テキストの編集欄。ストリップに溶け込む見た目のまま普通に編集できる */
+/* 認識テキストの編集欄。ストリップに溶け込む見た目のまま普通に編集できる。
+   高さはJS(syncLiveInputView)が内容に合わせて制御し、認識追記時は末尾へ追従する */
 .live-input {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   border: none;
   background: transparent;
@@ -355,8 +628,6 @@ body {
   padding: 0;
   resize: none;
   outline: none;
-  field-sizing: content; /* 入力量に応じて自動で伸びる(Chrome) */
-  max-height: 63px; /* 3行ぶんで止めてスクロール */
 }
 
 .live-input::placeholder {
@@ -364,18 +635,40 @@ body {
   font-size: 13px;
 }
 
+/* 未確定(interim)の認識テキスト。全文を折り返して見せる(省略しない) */
 .live-interim {
   opacity: 0.45;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* 長い発話の全文表示トグル */
+.live-expand {
   flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.live-expand:hover {
+  color: var(--ink);
+}
+
+/* 展開中はストリップが縦に伸びるため、ラベル類を上端に揃える */
+.live-strip.expanded {
+  align-items: flex-start;
 }
 
 .send-now {
   flex-shrink: 0;
-  background: var(--coral);
+  background: var(--accent);
   color: #16130f;
   border: none;
   border-radius: 8px;
@@ -401,9 +694,9 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  border: 2px solid var(--coral);
+  border: 2px solid var(--accent);
   background: transparent;
-  color: var(--coral);
+  color: var(--accent);
   font-size: 16px;
   cursor: pointer;
   flex-shrink: 0;
@@ -411,7 +704,7 @@ body {
 }
 
 .mic:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--coral) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .mic:disabled {
@@ -420,15 +713,40 @@ body {
 }
 
 .mic-on {
-  background: var(--coral);
+  background: var(--accent);
   color: #16130f;
   animation: pulse 1.8s ease-in-out infinite;
 }
 
+/* --mic-level (0-1) はJSが音量解析結果を毎フレーム書き込むCSS変数。発話が大きいほど発光が強まる */
 @keyframes pulse {
-  50% {
-    box-shadow: 0 0 0 10px color-mix(in srgb, var(--coral) 18%, transparent);
+  0%, 100% {
+    box-shadow: 0 0 calc(4px + 14px * var(--mic-level, 0)) calc(1px + 3px * var(--mic-level, 0))
+      color-mix(in srgb, var(--accent) 30%, transparent);
   }
+  50% {
+    box-shadow: 0 0 calc(10px + 34px * var(--mic-level, 0)) calc(3px + 9px * var(--mic-level, 0))
+      color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+
+/* ---- mic-wave: マイク横の簡易波形バー。周波数帯ごとの音量でリアルタイムに伸縮する ---- */
+.mic-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.mic-wave-bar {
+  width: 3px;
+  min-height: 3px;
+  height: calc(3px + 19px * var(--bar-level, 0));
+  border-radius: 2px;
+  background: var(--accent-glow);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-glow) 70%, transparent);
+  transition: height 0.06s linear;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -437,8 +755,25 @@ body {
   .interjection-pop,
   .icon-running,
   .count-running,
-  .task-flash {
+  .task-flash,
+  .task-zoom,
+  .proj-row.is-highlighted,
+  .task-running,
+  .task-succeeded,
+  .task-failed,
+  .hud-boot,
+  .hud-boot::after,
+  .hud-grid,
+  .hud-particle {
     animation: none;
+  }
+
+  .sidebar {
+    transition: none;
+  }
+
+  .mic-wave-bar {
+    transition: none;
   }
 }
 
@@ -475,7 +810,7 @@ body {
   }
 
   .proj-row.is-viewing {
-    border-color: color-mix(in srgb, var(--coral) 45%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   }
 
   .tasks {
@@ -550,7 +885,7 @@ input:focus-visible,
 }
 
 .summary-chip {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -567,7 +902,7 @@ input:focus-visible,
 }
 
 .tasks-title {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.15em;
   color: var(--ink-dim);
@@ -575,12 +910,12 @@ input:focus-visible,
 
 .tasks-running {
   font-size: 11px;
-  color: var(--coral);
+  color: var(--accent);
   margin-left: auto;
 }
 
 .tasks-filter {
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   background: transparent;
   border: 1px solid var(--line);
@@ -617,14 +952,14 @@ input:focus-visible,
   align-items: center;
   gap: 6px;
   margin: 0 0 6px;
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--ink-dim);
 }
 
 .task-section-head .task-section-title {
-  color: var(--coral);
+  color: var(--accent);
 }
 
 .task-section-toggle {
@@ -659,9 +994,14 @@ input:focus-visible,
   gap: 10px;
   background: var(--bg-raise);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 10px 10px 10px 2px;
   padding: 10px 12px;
-  transition: border-color 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.3s;
+  position: relative;
+  /* 右上をわずかに切り欠いてカード全体をSF風の多角形にする */
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
 }
 
 .task:hover {
@@ -669,10 +1009,50 @@ input:focus-visible,
 }
 
 /* 状態は左ボーダーの色でも一目でわかるようにする */
-.task-running { border-left: 3px solid var(--coral); }
+.task-running { border-left: 3px solid var(--accent); }
 .task-succeeded { border-left: 3px solid var(--ok); }
 .task-failed { border-left: 3px solid var(--err); }
 .task-cancelled { border-left: 3px solid var(--ink-dim); }
+
+/* 状態ごとに発光色・強度の違うパルスを与え、遠目でも実行中/成功/失敗が判別できるようにする */
+.task-running {
+  animation: task-glow-running 2.2s ease-in-out infinite;
+}
+
+.task-succeeded {
+  animation: task-glow-succeeded 2.4s ease-out 1;
+}
+
+.task-failed {
+  animation: task-glow-failed 1.4s ease-in-out 3;
+}
+
+@keyframes task-glow-running {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+}
+
+@keyframes task-glow-succeeded {
+  0% {
+    box-shadow: 0 0 16px 2px color-mix(in srgb, var(--ok) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent);
+  }
+}
+
+@keyframes task-glow-failed {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 14px 2px color-mix(in srgb, var(--err) 55%, transparent);
+  }
+}
 
 /* 作成・状態変化の着信フラッシュ */
 .task-flash {
@@ -686,6 +1066,25 @@ input:focus-visible,
   }
 }
 
+/* ui_focus_task ディレクティブによるズーム演出。対象カードを一瞬拡大してから戻す */
+.task-zoom {
+  animation: task-zoom 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes task-zoom {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.035);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-glow) 80%, transparent),
+      0 0 20px color-mix(in srgb, var(--accent-glow) 40%, transparent);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .task-icon {
   width: 14px;
   flex-shrink: 0;
@@ -695,7 +1094,7 @@ input:focus-visible,
 }
 
 .icon-running {
-  color: var(--coral);
+  color: var(--accent);
   animation: blink 1.6s ease-in-out infinite;
 }
 
@@ -724,31 +1123,82 @@ input:focus-visible,
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-family: ui-monospace, "SF Mono", monospace;
+  font-family: var(--mono);
   font-size: 10px;
   color: var(--ink-dim);
 }
 
-/* 音声・テキストでタスクを指定するための連番。目に留まるよう太字にする */
-.task-seq {
-  font-weight: 700;
-  color: var(--ink);
+/* タスクの識別番号。カード内のどの表示よりも目立たせ、常時・展開前から読めるよう
+   独立したバッジとしてカード先頭(左上)に置く。トーン・サイズ・配色すべてで最優先の視認性を狙う */
+.task-seq-badge {
+  flex-shrink: 0;
+  align-self: flex-start;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--bg);
+  background: var(--accent-glow);
+  border-radius: 6px;
+  padding: 2px 8px;
+  letter-spacing: 0.2px;
 }
 
-/* どのプロジェクトのタスクかをバッジで示す */
-.task-project {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--user-blue) 16%, transparent);
-  border: 1px solid color-mix(in srgb, var(--user-blue) 30%, transparent);
+/* 短縮ID。連番の補助なので控えめに。全文IDはtitleで参照できる */
+.task-id {
+  color: var(--ink-dim);
+  opacity: 0.8;
+}
+
+/* セクション内をプロジェクトごとにまとめる。見出しがカードの所属を示す */
+.task-group {
+  margin-bottom: 10px;
+}
+
+.task-group-head {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
   color: var(--user-blue);
-  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.state-running { color: var(--coral); }
+/* タスク一覧のプロジェクト絞り込みチップ(表示フィルタのみ。作業切替はしない) */
+.task-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.task-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  padding: 2px 10px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-chip:hover {
+  color: var(--ink);
+}
+
+.task-chip.is-active {
+  background: color-mix(in srgb, var(--user-blue) 16%, transparent);
+  border-color: color-mix(in srgb, var(--user-blue) 40%, transparent);
+  color: var(--user-blue);
+}
+
+.state-running { color: var(--accent); }
 .state-succeeded { color: var(--ok); }
 .state-failed { color: var(--err); }
 .state-cancelled { color: var(--ink-dim); }
@@ -760,7 +1210,7 @@ input:focus-visible,
   font-weight: 600;
 }
 
-.task-state.state-running { background: color-mix(in srgb, var(--coral) 16%, transparent); }
+.task-state.state-running { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .task-state.state-succeeded { background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .task-state.state-failed { background: color-mix(in srgb, var(--err) 16%, transparent); }
 .task-state.state-cancelled { background: color-mix(in srgb, var(--ink-dim) 14%, transparent); }
@@ -773,7 +1223,7 @@ input:focus-visible,
 .task-branch {
   padding: 1px 8px;
   border-radius: 999px;
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   background: color-mix(in srgb, var(--ok) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--ok) 26%, transparent);
   color: var(--ok);
@@ -786,7 +1236,7 @@ input:focus-visible,
 /* 展開時に表示するworktreeの作業ディレクトリ(マージ判断の手がかり) */
 .task-worktree {
   font-size: 11px;
-  font-family: var(--mono, monospace);
+  font-family: var(--mono);
   color: var(--ink-dim);
   overflow-wrap: anywhere;
 }
@@ -838,7 +1288,8 @@ input:focus-visible,
 
 .task-cancel,
 .task-resume,
-.task-append {
+.task-append,
+.task-move {
   background: transparent;
   border: 1px solid var(--line);
   color: var(--ink-dim);
@@ -851,13 +1302,31 @@ input:focus-visible,
 
 .task-cancel:hover,
 .task-resume:hover,
-.task-append:hover { color: var(--ink); }
+.task-append:hover,
+.task-move:hover { color: var(--ink); }
 
 .task-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
   flex-shrink: 0;
+}
+
+/* ---- プロジェクト付け替えの移動先セレクタ(カード内の全幅行) ---- */
+.task-move-form {
+  flex-basis: 100%;
+  display: flex;
+}
+
+.task-move-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 /* ---- 実行中タスクへの追加指示フォーム(カード内の全幅行) ---- */
@@ -890,6 +1359,50 @@ input:focus-visible,
 
 .task-instruct-send:hover:not(:disabled) { color: var(--ink); }
 .task-instruct-send:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- 実行中タスクの途中経過(展開時のカード内全幅行) ---- */
+.task-progress {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+
+.task-progress-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-progress-tool {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-progress-tail {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.task-progress-waiting {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-dim);
+  font-style: italic;
+}
 
 /* ---- v2: system bubbles ---- */
 .bubble-system {
@@ -984,7 +1497,7 @@ input:focus-visible,
   font-size: 12px;
 }
 
-.dict-input:focus { outline: 1px solid var(--coral); }
+.dict-input:focus { outline: 1px solid var(--accent); }
 
 .dict-add-btn {
   align-self: flex-end;
@@ -1055,3 +1568,125 @@ input:focus-visible,
 }
 
 .followup-clear:hover { color: var(--ink); }
+
+/* ---- 要対応(結果未確認)の受信箱 ---- */
+
+/* 未確認の完了/失敗カードは左ボーダーとは別にコーラルの縁で目を引く */
+.task-review {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.task-review-badge {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* サマリの要対応チップは押せる(受信箱モードの切り替え) */
+.chip-review {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.chip-review:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raise));
+}
+
+.chip-review.is-active {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-raise));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ---- タスクスレッドビュー(フォーカス中タスクの履歴) ---- */
+
+.task-thread {
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line));
+  border-radius: 10px;
+  background: var(--bg-raise);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.thread-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--amber);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-close {
+  background: transparent;
+  border: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.thread-close:hover { color: var(--ink); }
+
+.thread-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.thread-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  /* 時系列の縦ライン。スレッドであることが一目で分かるように */
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+}
+
+.thread-kind {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+  flex-shrink: 0;
+}
+
+.thread-instruction .thread-kind { color: var(--user-blue); }
+.thread-appended .thread-kind { color: var(--amber); }
+.thread-result .thread-kind { color: var(--ok); }
+.thread-error .thread-kind { color: var(--err); }
+
+.thread-seq {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+  flex-shrink: 0;
+}
+
+.thread-text {
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  /* 長い結果でもスレッドが伸びすぎないよう5行で省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

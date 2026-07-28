@@ -12,9 +12,12 @@ import {
   mockQuickAsk,
 } from "./claudeRunner.js";
 import { createDictionaryApp, DictionaryStore } from "./dictionary.js";
+import { createFavoritesApp, FavoritesStore } from "./favorites.js";
+import { ProjectIndex } from "./projectIndex.js";
 import { DEFAULT_RECENT_DAYS, resolveProjectPath, scanProjects } from "./projects.js";
 import { TaskManager } from "./taskManager.js";
 import { TaskStore } from "./taskStore.js";
+import { ThreadLog, ThreadStore } from "./threadLog.js";
 import { createWorktreeProvider } from "./worktrees.js";
 
 const useMock = process.env.CLAUDE_VOICE_MOCK === "1";
@@ -41,13 +44,40 @@ const taskManager = new TaskManager(
 // 前回起動時の履歴を復元(runningのまま残ったタスクはfailedに補正される)
 await taskManager.restore();
 
+// 会話ログのスレッド保存: メイン会話とタスク別スレッドを分離して永続化する
+const threadsPath =
+  process.env.CLAUDE_VOICE_THREADS_PATH ?? join(homedir(), ".claude-voice", "threads.json");
+const threadLog = new ThreadLog(new ThreadStore(threadsPath));
+await threadLog.restore();
+
+// サイドバーに表示するお気に入りプロジェクト(辞書と同じ ~/.claude-voice 配下に永続化)。
+// お気に入りは最終更新が古くても通常一覧に含める
+const favoritesPath =
+  process.env.CLAUDE_VOICE_FAVORITES_PATH ?? join(homedir(), ".claude-voice", "favorites.json");
+const favoritesStore = new FavoritesStore(favoritesPath);
+
+// プロジェクト情報のTTLキャッシュ: 一覧のポーリングやチャットの[状況]生成のたびに
+// readdir+statのフルスキャンが走らないようにする
+const projectIndex = new ProjectIndex({
+  scan: async ({ all }) =>
+    scanProjects(projectsRoot, {
+      maxAgeDays: all ? null : recentDays,
+      include: await favoritesStore.list(),
+    }),
+  resolve: (name) => resolveProjectPath(projectsRoot, name),
+});
+
 const app = createApp({
   runner: useMock ? createMockRunner() : createCliRunner(),
   quickAsk: useMock ? mockQuickAsk : createCliQuickAsk(),
   taskManager,
-  listProjects: (opts) => scanProjects(projectsRoot, { maxAgeDays: opts?.all ? null : recentDays }),
-  resolveProject: (name) => resolveProjectPath(projectsRoot, name),
+  threadLog,
+  listProjects: (opts) => projectIndex.list(opts),
+  resolveProject: (name) => projectIndex.resolve(name),
 });
+
+// お気に入りAPI。変更したら一覧キャッシュを捨て、次のGETに即反映させる
+app.route("/api/favorites", createFavoritesApp(favoritesStore, () => projectIndex.invalidate()));
 
 // 音声補正辞書。/api/* のCSRFガード(app.ts)はマウント先でも効く
 const dictionaryPath =

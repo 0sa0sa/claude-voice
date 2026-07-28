@@ -3,7 +3,10 @@ export type Directive =
   | { action: "append_task"; taskId: string; instruction: string }
   | { action: "switch_project"; project: string }
   | { action: "cancel_task"; taskId: string }
-  | { action: "fix_transcript"; corrected: string };
+  | { action: "fix_transcript"; corrected: string }
+  | { action: "ui_focus_task"; taskId: string }
+  | { action: "ui_toggle_sidebar"; open: boolean }
+  | { action: "ui_highlight_project"; project: string };
 
 const MARKER = "@@CV";
 
@@ -49,6 +52,16 @@ function validate(obj: any): Directive | null {
     case "fix_transcript":
       return typeof obj.corrected === "string" && obj.corrected.trim()
         ? { action: "fix_transcript", corrected: obj.corrected }
+        : null;
+    case "ui_focus_task": {
+      const taskId = taskRef(obj.taskId);
+      return taskId !== null ? { action: "ui_focus_task", taskId } : null;
+    }
+    case "ui_toggle_sidebar":
+      return typeof obj.open === "boolean" ? { action: "ui_toggle_sidebar", open: obj.open } : null;
+    case "ui_highlight_project":
+      return typeof obj.project === "string" && obj.project.trim()
+        ? { action: "ui_highlight_project", project: obj.project }
         : null;
     default:
       return null;

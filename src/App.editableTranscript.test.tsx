@@ -128,6 +128,24 @@ describe("編集可能な認識テキスト", () => {
     expect(editableTranscript()).toHaveValue("");
   });
 
+  it(
+    "アンマウント後に無音の自動送信タイマーが発火しない(タイマーのクリーンアップ)",
+    async () => {
+      const user = userEvent.setup();
+      const { unmount } = render(<App />);
+      await startMic(user);
+      act(() => emit(["天気を教えて"])); // interimなしの確定 → 2秒の自動送信タイマーが起動
+      unmount();
+      // 自動送信の無音しきい値(2秒)を超えて待っても、送信は起きないこと
+      await new Promise((r) => setTimeout(r, 2400));
+      const chatCalls = vi
+        .mocked(fetch)
+        .mock.calls.filter((c) => String(c[0]).includes("/api/chat"));
+      expect(chatCalls).toHaveLength(0);
+    },
+    10_000,
+  );
+
   it("末尾の「送信」音声コマンドでも編集後の本文が送られる", async () => {
     const user = userEvent.setup();
     render(<App />);

@@ -17,6 +17,8 @@ export interface Task {
   instruction: string;
   status: TaskStatus;
   events: TaskEvent[];
+  /** 実行中のClaude出力(ストリーム)の連結。末尾LIVE_TEXT_MAX文字だけ保持する途中経過 */
+  liveText?: string;
   result?: string;
   error?: string;
   startedAt: number;
@@ -57,6 +59,7 @@ export type TaskSpawner = (opts: {
 }) => Promise<{ text: string; sessionId?: string }>;
 
 const MAX_EVENTS = 200;
+const LIVE_TEXT_MAX = 8000;
 
 /** 完了報告はTTSで読み上げるため、全タスク指示の末尾に付ける読み上げ向けの体裁指示。 */
 export const REPORT_STYLE_DIRECTIVE =
@@ -148,6 +151,12 @@ export class TaskManager {
       // session通知はイベントログには出さず、resume用にタスクへ記録するだけ
       if (e.kind === "session") {
         task.sessionId = e.sessionId;
+        return;
+      }
+      // 出力トークンはイベントログではなくliveTextに集約する。イベントログを
+      // 断片で溢れさせず、ツール実行などの節目を上限200件の中に残すため
+      if (e.kind === "delta") {
+        task.liveText = ((task.liveText ?? "") + (e.text ?? "")).slice(-LIVE_TEXT_MAX);
         return;
       }
       this.pushTaskEvent(task, e.kind, e.name ?? e.text ?? "");
@@ -250,6 +259,19 @@ export class TaskManager {
     if (!task || !queue || task.status !== "running") return false;
     queue.push(text);
     this.pushTaskEvent(task, "instruction", text);
+    return true;
+  }
+
+  /**
+   * タスクの紐付きプロジェクトを付け替える(メタデータのみの変更)。
+   * 実行中タスクはworktree/cwdに紐付いて動作しているため対象外。
+   * worktree・ブランチ・セッション情報は実行時の履歴としてそのまま残す。
+   */
+  setProject(id: string, project: string): boolean {
+    const task = this.tasks.get(id);
+    if (!task || task.status === "running") return false;
+    task.project = project;
+    this.persist();
     return true;
   }
 

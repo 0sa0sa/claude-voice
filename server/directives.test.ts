@@ -97,6 +97,44 @@ describe("extractDirectives", () => {
     expect(r.cleanText).toBe("ok");
   });
 
+  it("extracts ui_focus_task and coerces a numeric taskId", () => {
+    const r = extractDirectives('@@CV {"action":"ui_focus_task","taskId":3}\nok');
+    expect(r.directives).toEqual([{ action: "ui_focus_task", taskId: "3" }]);
+    expect(r.cleanText).toBe("ok");
+  });
+
+  it("rejects ui_focus_task without a taskId", () => {
+    const r = extractDirectives('@@CV {"action":"ui_focus_task"}\nok');
+    expect(r.directives).toEqual([]);
+  });
+
+  it("extracts ui_toggle_sidebar with an open flag", () => {
+    const r = extractDirectives(
+      '@@CV {"action":"ui_toggle_sidebar","open":false}\n@@CV {"action":"ui_toggle_sidebar","open":true}\nok',
+    );
+    expect(r.directives).toEqual([
+      { action: "ui_toggle_sidebar", open: false },
+      { action: "ui_toggle_sidebar", open: true },
+    ]);
+  });
+
+  it("rejects ui_toggle_sidebar without a boolean open flag", () => {
+    const r = extractDirectives('@@CV {"action":"ui_toggle_sidebar"}\n@@CV {"action":"ui_toggle_sidebar","open":"yes"}\nok');
+    expect(r.directives).toEqual([]);
+    expect(r.cleanText).toBe("ok");
+  });
+
+  it("extracts ui_highlight_project with a project name", () => {
+    const r = extractDirectives('@@CV {"action":"ui_highlight_project","project":"claude-voice"}\nok');
+    expect(r.directives).toEqual([{ action: "ui_highlight_project", project: "claude-voice" }]);
+  });
+
+  it("rejects ui_highlight_project without a project name", () => {
+    const r = extractDirectives('@@CV {"action":"ui_highlight_project"}\n@@CV {"action":"ui_highlight_project","project":" "}\nok');
+    expect(r.directives).toEqual([]);
+    expect(r.cleanText).toBe("ok");
+  });
+
   it("ignores malformed or unknown directives but still strips the marker line", () => {
     const r = extractDirectives('@@CV {broken json\n@@CV {"action":"fly_to_moon"}\nこんにちは');
     expect(r.directives).toEqual([]);
