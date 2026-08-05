@@ -24,6 +24,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     project: "demo",
     instruction: "run tests",
     status: "succeeded",
+    priority: "normal",
     events: [{ kind: "delta", text: "working", at: 1000 }],
     result: "done",
     startedAt: 1000,

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { useChat } from "./hooks/useChat";
 import type { DirectiveResult } from "./hooks/useChat";
 import { useDictionary } from "./hooks/useDictionary";
 import { useSpeechRecognition } from "./hooks/useSpeechRecognition";
+import { useDispatchQueue } from "./hooks/useDispatchQueue";
 import { useMicLevel } from "./hooks/useMicLevel";
 import { useTTS } from "./hooks/useTTS";
 import { DictionaryPanel } from "./components/DictionaryPanel";
@@ -25,6 +26,7 @@ import type { FocusCommand } from "./lib/focusCommand";
 import { parseVoiceToggleCommand } from "./lib/voiceToggleCommand";
 import type { VoiceToggleCommand } from "./lib/voiceToggleCommand";
 import { needsReview, pruneAcked, reviewTasks } from "./lib/taskInbox";
+import { needsClarification } from "./lib/taskCompletion";
 import { visibleProjects } from "./lib/projectFavorites";
 import { buildThreadTimeline, collectThreadTasks } from "./lib/taskThread";
 import type { ThreadEventLike } from "./lib/taskThread";
@@ -51,7 +53,9 @@ interface TaskSummary {
   seq: number;
   project: string;
   instruction: string;
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  /** 実行キューの優先度。urgent(緊急)は先に実行され、結果も最優先で通知・表示される。 */
+  priority: "urgent" | "normal";
   startedAt: number;
   endedAt?: number | null;
   lastEvent: string | null;
@@ -84,6 +88,7 @@ function ttsRateOptions(current: number): number[] {
 }
 
 const STATUS_LABEL: Record<TaskSummary["status"], string> = {
+  queued: "待機中",
   running: "実行中",
   succeeded: "完了",
   failed: "失敗",
@@ -91,6 +96,7 @@ const STATUS_LABEL: Record<TaskSummary["status"], string> = {
 };
 
 const STATUS_ICON: Record<TaskSummary["status"], string> = {
+  queued: "◔",
   running: "●",
   succeeded: "✓",
   failed: "✕",
@@ -124,6 +130,80 @@ function timeAgo(ts: number): string {
   const hr = Math.floor(min / 60);
   if (hr < 24) return `${hr}時間前`;
   return `${Math.floor(hr / 24)}日前`;
+}
+
+/**
+ * ポインタ視差: マウス位置を -1..1 に正規化して CSS 変数 --px/--py へ書き込む。
+ * シーン全体(.app)がこれを継承し、パネル群を覗き込むように傾ける永続的な奥行き感を生む。
+ * prefers-reduced-motion では無効。テスト(jsdom)ではpointermoveが発火しないため実質no-op。
+ */
+function useSceneParallax(ref: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof window === "undefined") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+    let raf = 0;
+    const onMove = (e: PointerEvent) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (!w || !h) return;
+      const px = Math.max(-1, Math.min(1, (e.clientX / w) * 2 - 1));
+      const py = Math.max(-1, Math.min(1, (e.clientY / h) * 2 - 1));
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        el.style.setProperty("--px", px.toFixed(3));
+        el.style.setProperty("--py", py.toFixed(3));
+      });
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [ref]);
+}
+
+/**
+ * FLIP: タスクカードが並び替え・再グループされたとき、瞬間移動ではなく
+ * 元の位置から新しい位置へ滑らかに滑らせ、空間的な連続性を保つ。
+ * 会話の流れに応じてオブジェクトが「自ら再配置される」体験の核。
+ * WAAPI 非対応環境(jsdom)や getBoundingClientRect が 0 の環境では黙って無効化される。
+ */
+function useSpatialReorder(containerRef: RefObject<HTMLElement | null>) {
+  const prev = useRef(new Map<string, DOMRect>());
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const nodes = container.querySelectorAll<HTMLElement>("[data-flip-key]");
+    const alive = new Set<string>();
+    nodes.forEach((el) => {
+      const key = el.dataset.flipKey ?? "";
+      alive.add(key);
+      const rect = el.getBoundingClientRect();
+      const before = prev.current.get(key);
+      prev.current.set(key, rect);
+      if (!before || reduce) return;
+      const dx = before.left - rect.left;
+      const dy = before.top - rect.top;
+      if ((dx || dy) && typeof el.animate === "function") {
+        try {
+          el.animate(
+            [
+              { transform: `translate3d(${dx}px, ${dy}px, 48px)`, opacity: 0.75 },
+              { transform: "translate3d(0, 0, 0)", opacity: 1 },
+            ],
+            { duration: 460, easing: "cubic-bezier(0.22, 0.61, 0.36, 1)" },
+          );
+        } catch {
+          /* WAAPI 未実装環境では黙って無効化 */
+        }
+      }
+    });
+    for (const k of [...prev.current.keys()]) if (!alive.has(k)) prev.current.delete(k);
+  });
 }
 
 export default function App() {
@@ -180,6 +260,12 @@ export default function App() {
   const tts = useTTS();
   const ttsRef = useRef(tts);
   ttsRef.current = tts;
+
+  // 空間ワークスペース: シーン全体のポインタ視差と、タスクの再配置アニメーション
+  const sceneRef = useRef<HTMLDivElement | null>(null);
+  const tasksPanelRef = useRef<HTMLElement | null>(null);
+  useSceneParallax(sceneRef);
+  useSpatialReorder(tasksPanelRef);
 
   const refreshProjects = useCallback(async () => {
     try {
@@ -278,7 +364,7 @@ export default function App() {
   const chat = useChat(browserSessionId, (reply) => tts.speak(reply), onDirective);
   const chatApi = useRef<typeof chat | null>(null);
   chatApi.current = chat;
-  const { messages, busy, send, addInterjection, addSystem } = chat;
+  const { messages, send, addInterjection, addSystem } = chat;
 
   const lastQueriedRef = useRef("");
   const interjectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,9 +377,6 @@ export default function App() {
     },
     [],
   );
-  const busyRef = useRef(busy);
-  busyRef.current = busy;
-
   const queryInterjection = useCallback(
     async (text: string) => {
       lastQueriedRef.current = text;
@@ -318,21 +401,23 @@ export default function App() {
   );
 
   // 二重送信ガード:
-  // - sendGuardRef: busy state が反映される前の連続発火を同期的に弾く
+  // - sendGuardRef: 同一発話の送信呼び出しが同期的に重複発火するのを弾く。busyの
+  //   完了までは待たない(待つとAI応答中に話しかけた新しい発話が送信できずバージイン
+  //   が機能しなくなる)。送信を呼び出した直後のマイクロタスクで自動的に解除する。
   // - lastSentRef: reset後もブラウザの認識結果が同一発話を再発火するため、
-  //   同じ本文の連続送信を抑制(busyサイクルをまたぐ再発火にも効く)
+  //   同じ本文の連続送信を抑制する
   const sendGuardRef = useRef(false);
   const lastSentRef = useRef("");
-  useEffect(() => {
-    if (!busy) sendGuardRef.current = false;
-  }, [busy]);
 
   const sendTranscript = useCallback(
     (text: string) => {
       const message = text.trim();
-      if (!message || busyRef.current || sendGuardRef.current) return;
+      if (!message || sendGuardRef.current) return;
       if (message === lastSentRef.current) return; // 同一発話の再発火は無視
       sendGuardRef.current = true;
+      queueMicrotask(() => {
+        sendGuardRef.current = false;
+      });
       lastSentRef.current = message;
       lastQueriedRef.current = "";
       tts.cancel(); // 送信したら進行中の読み上げは止める
@@ -346,6 +431,15 @@ export default function App() {
   const speechResetRef = useRef<() => void>(() => {});
   // タスク選択中は発話/入力を追いタスクへ回すため、送信先を毎レンダー差し替える
   const dispatchRef = useRef<(message: string) => void | Promise<void>>(() => {});
+  // 発話キュー本体が実際に叩く送信関数(= dispatchMessage)。毎レンダー差し替える
+  const realDispatchRef = useRef<(message: string) => void | Promise<void>>(() => {});
+  // 発話ディスパッチキュー: 立て続けの発話を1件ずつ順に処理し、緊急発話は
+  // 進行中を打ち切って割り込む。sendTranscript/submitDraft はここへ投入する。
+  const dispatchQueue = useDispatchQueue((text) => realDispatchRef.current(text), {
+    interrupt: () => chatApi.current?.interrupt(),
+  });
+  // sendTranscript は dispatchRef 経由で送るので、その宛先をキュー投入に差し替える
+  dispatchRef.current = dispatchQueue.submit;
 
   const onTranscriptUpdate = useCallback(
     (t: TranscriptState) => {
@@ -473,17 +567,22 @@ export default function App() {
         flashed.push(t.id);
       }
       if (before === "running" && t.status !== "running") {
+        // 緊急タスクの結果は頭に「緊急タスク」と付けて最優先で耳に入るようにする
+        const urgentTag = t.priority === "urgent" ? "緊急タスク: " : "";
         const prefix =
           t.status === "succeeded"
-            ? `${t.project} のタスクが完了しました。`
+            ? `${urgentTag}${t.project} のタスクが完了しました。`
             : t.status === "failed"
-              ? `${t.project} のタスクが失敗しました。`
+              ? `${urgentTag}${t.project} のタスクが失敗しました。`
               : `${t.project} のタスクを中止しました`;
         const detail =
           t.status === "succeeded" ? (t.result ?? "") : t.status === "failed" ? (t.error ?? "") : "";
         // 表示は全文、読み上げは長い場合のみ文の区切りで省略する
         addSystem(`⚙ ${prefix}${detail}`);
-        tts.speak(`${prefix}${clipForSpeech(detail)}`);
+        const announcement = `${prefix}${clipForSpeech(detail)}`;
+        // 緊急タスクの結果は進行中の読み上げを飛び越えて即座に伝える
+        if (t.priority === "urgent") tts.speakNow(announcement);
+        else tts.speak(announcement);
       }
       prev.set(t.id, t.status);
     }
@@ -500,7 +599,27 @@ export default function App() {
   }, [tasks, addSystem, tts]);
 
   const chatRef = useRef<HTMLElement | null>(null);
+  const bubbleRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const prevMessageCountRef = useRef(0);
   useEffect(() => {
+    const grew = messages.length > prevMessageCountRef.current;
+    prevMessageCountRef.current = messages.length;
+    // ストリーミング中の本文更新(件数は増えない)ではスクロール位置を動かさない。
+    // 動かすと、アシスタントの返信が伸びるたびに直前の自分の発言が画面外へ押し流されてしまう。
+    if (!grew) return;
+    // 直近に追加されたのがユーザー(または割り込み)発言なら、その先頭が見える位置へ。
+    // 間にアシスタントの返信(まだ空/ストリーミング中)を挟んでいても遡って探す。
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "user" || m.role === "interjection") {
+        const bubble = bubbleRefs.current.get(m.id);
+        if (bubble && typeof bubble.scrollIntoView === "function") {
+          bubble.scrollIntoView({ block: "start", behavior: "smooth" });
+        }
+        return;
+      }
+      if (m.role !== "assistant") break;
+    }
     const el = chatRef.current;
     if (el && typeof el.scrollTo === "function") el.scrollTo({ top: el.scrollHeight });
   }, [messages]);
@@ -629,6 +748,7 @@ export default function App() {
 
   // タスクサイドバー用: 状態ごとの件数サマリ(一目で全体の状況が分かるように)
   const statusTotals: Record<TaskSummary["status"], number> = {
+    queued: 0,
     running: 0,
     succeeded: 0,
     failed: 0,
@@ -809,14 +929,12 @@ export default function App() {
     const voiceCmd = parseVoiceToggleCommand(message);
     if (voiceCmd) {
       applyVoiceToggle(voiceCmd);
-      sendGuardRef.current = false;
       return;
     }
     // フォーカス操作コマンドはチャット・タスクのどちらにも送らずその場で処理する
     const cmd = parseTaskFocusCommand(message);
     if (cmd) {
       applyFocusCommand(cmd);
-      sendGuardRef.current = false;
       return;
     }
     if (selectedTask) {
@@ -827,18 +945,16 @@ export default function App() {
       } else {
         await startFollowUpTask(selectedTask, message);
       }
-      // チャットレーンを通らずbusyが遷移しないため、二重送信ガードをここで解除する
-      sendGuardRef.current = false;
     } else {
       await send(message);
     }
   };
-  dispatchRef.current = dispatchMessage;
+  realDispatchRef.current = dispatchMessage;
 
   const submitDraft = () => {
     if (draft.trim()) {
       tts.cancel(); // 送信したら進行中の読み上げは止める
-      void dispatchMessage(draft.trim());
+      dispatchQueue.submit(draft.trim());
       setDraft("");
     }
   };
@@ -848,10 +964,13 @@ export default function App() {
     const focusKind = focusTargetKind(t);
     const selected = selectedTask?.id === t.id;
     const review = needsReview(t, ackedIds);
+    // status上は成功でも、実装せず質問を返しただけで止まっている疑いがあるタスク
+    const clarify = t.status === "succeeded" && needsClarification(t.result);
     return (
       <li
         key={t.id}
-        className={`task task-${t.status} ${flashIds.has(t.id) ? "task-flash" : ""} ${selected ? "task-selected" : ""} ${review ? "task-review" : ""} ${zoomTaskId === t.id ? "task-zoom" : ""}`}
+        data-flip-key={t.id}
+        className={`task task-${t.status} ${t.priority === "urgent" ? "task-urgent" : ""} ${flashIds.has(t.id) ? "task-flash" : ""} ${selected ? "task-selected" : ""} ${review ? "task-review" : ""} ${clarify ? "task-clarify" : ""} ${zoomTaskId === t.id ? "task-zoom" : ""}`}
         ref={(el) => {
           // ui_focus_task ディレクティブでズームした対象を画面内へスクロールする
           if (el && zoomTaskId === t.id && typeof el.scrollIntoView === "function") {
@@ -909,9 +1028,22 @@ export default function App() {
               </span>
             )}
             <span className={`task-state state-${t.status}`}>{STATUS_LABEL[t.status]}</span>
+            {t.priority === "urgent" && (
+              <span className="task-urgent-badge" title="緊急タスク(優先実行・優先通知)">
+                緊急
+              </span>
+            )}
             <span className="task-time">{timeAgo(t.endedAt ?? t.startedAt)}</span>
             {selected && <span className="task-selected-badge">選択中</span>}
             {review && <span className="task-review-badge">要対応</span>}
+            {clarify && (
+              <span
+                className="task-clarify-badge"
+                title="実装が完了せず、質問や確認を返してきた可能性があります"
+              >
+                要確認
+              </span>
+            )}
           </span>
           <span className={`task-instruction ${expanded ? "" : "clamped"}`}>{t.instruction}</span>
           {/* worktree分離の詳細: パスは展開時のみ、フォールバックの記録は常時表示 */}
@@ -1039,7 +1171,7 @@ export default function App() {
     ));
 
   return (
-    <div className="app">
+    <div className="app" ref={sceneRef}>
       <div className="hud-bg" aria-hidden>
         <div className="hud-grid" />
         {Array.from({ length: 8 }, (_, i) => (
@@ -1183,7 +1315,14 @@ export default function App() {
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={`bubble bubble-${m.role}`}>
+          <div
+            key={m.id}
+            className={`bubble bubble-${m.role}`}
+            ref={(el) => {
+              if (el) bubbleRefs.current.set(m.id, el);
+              else bubbleRefs.current.delete(m.id);
+            }}
+          >
             {m.role === "interjection" && <span className="interject-label">割り込み</span>}
             <p>{displayText(m.text) || (m.streaming ? "…" : "")}</p>
           </div>
@@ -1234,11 +1373,28 @@ export default function App() {
             </button>
           )}
           {liveText.trim() !== "" && (
-            <button className="send-now" onClick={() => sendTranscript(liveText)} disabled={busy}>
+            // busyで無効化しない: AI応答中でも新しい発話をバージインで即送信できるようにする
+            <button className="send-now" onClick={() => sendTranscript(liveText)}>
               送信
             </button>
           )}
         </div>
+        {dispatchQueue.pending.length > 0 && (
+          <div className="queue-strip" role="status" aria-label="順番待ちの発話">
+            <span className="queue-label">順番待ち {dispatchQueue.pending.length}</span>
+            <ul className="queue-items">
+              {dispatchQueue.pending.map((q) => (
+                <li
+                  key={q.id}
+                  className={`queue-item ${q.urgency === "urgent" ? "queue-item-urgent" : ""}`}
+                >
+                  {q.urgency === "urgent" && <span className="queue-item-badge">緊急</span>}
+                  <span className="queue-item-text">{q.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {selectedTask && (
           <div className="followup-strip" role="status">
             <span className="followup-label">
@@ -1292,14 +1448,15 @@ export default function App() {
               if (e.key === "Enter" && !isImeComposing(e.nativeEvent)) submitDraft();
             }}
           />
-          <button className="send" onClick={submitDraft} disabled={busy || !draft.trim()}>
+          {/* busyで無効化しない: AI応答中でも新しい発話をバージインで即送信できるようにする */}
+          <button className="send" onClick={submitDraft} disabled={!draft.trim()}>
             送信
           </button>
         </div>
       </footer>
         </div>
 
-        <aside className="tasks hud-frame hud-boot" aria-label="タスク">
+        <aside className="tasks hud-frame hud-boot" aria-label="タスク" ref={tasksPanelRef}>
           <div className="tasks-head">
             <span className="tasks-title">タスク</span>
             {taskFilter && (

@@ -5,6 +5,8 @@ export interface SessionState {
   seenTriggers: string[];
   /** Transcript length at the last interjection; only re-interject once the user has said more. */
   lastInterjectLen: number;
+  /** バージインで打ち切るための、現在進行中の /api/chat 呼び出しのAbortController。 */
+  activeChatAbort?: AbortController;
 }
 
 export class SessionStore {

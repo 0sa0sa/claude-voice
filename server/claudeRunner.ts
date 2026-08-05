@@ -15,7 +15,7 @@ const TASK_TIMEOUT_MS = 30 * 60_000;
 export function createCliRunner(): ChatRunner {
   return {
     mode: "cli",
-    run({ prompt, systemPrompt, resumeSessionId, onEvent }) {
+    run({ prompt, systemPrompt, resumeSessionId, onEvent, signal }) {
       return new Promise((resolve, reject) => {
         const args = [
           "-p",
@@ -43,6 +43,13 @@ export function createCliRunner(): ChatRunner {
           child.kill("SIGKILL");
           reject(new Error("claude CLI timed out"));
         }, CHAT_TIMEOUT_MS);
+        // バージインで打ち切られたら、応答を待たずCLIプロセスごと止める
+        const onAbort = () => {
+          clearTimeout(timer);
+          child.kill("SIGKILL");
+          reject(new Error("打ち切られました"));
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
 
         let sessionId: string | undefined;
         let resultText = "";
@@ -68,10 +75,13 @@ export function createCliRunner(): ChatRunner {
         child.stderr.on("data", (chunk: string) => (stderr += chunk));
         child.on("error", (err) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
           reject(new Error(`claude CLI起動に失敗しました: ${err.message}`));
         });
         child.on("close", (code) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          if (signal?.aborted) return; // すでにonAbortでreject済み
           handleLines(buf.flush());
           if (code === 0 || resultText) {
             resolve({ sessionId, text: resultText });
@@ -212,14 +222,16 @@ export function createMockTaskSpawner(): TaskSpawner {
 export function createMockRunner(): ChatRunner {
   return {
     mode: "mock",
-    async run({ prompt, resumeSessionId, onEvent }) {
+    async run({ prompt, resumeSessionId, onEvent, signal }) {
       const sessionId = resumeSessionId ?? `mock-${Math.random().toString(36).slice(2, 8)}`;
       onEvent({ kind: "session", sessionId });
       const reply = `(モック応答) 「${prompt.slice(-40)}」について理解しました。次にどう進めますか？`;
       for (const ch of reply.match(/.{1,6}/g) ?? []) {
         await new Promise((r) => setTimeout(r, 30));
+        if (signal?.aborted) throw new Error("打ち切られました");
         onEvent({ kind: "delta", text: ch });
       }
+      if (signal?.aborted) throw new Error("打ち切られました");
       onEvent({ kind: "result", text: reply, sessionId });
       return { sessionId, text: reply };
     },

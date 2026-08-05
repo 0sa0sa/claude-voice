@@ -6,8 +6,9 @@ function task(
   id: string,
   status: ReviewableTaskLike["status"],
   endedAt?: number,
+  priority?: "urgent" | "normal",
 ): ReviewableTaskLike {
-  return { id, status, startedAt: 100, endedAt: endedAt ?? null };
+  return { id, status, startedAt: 100, endedAt: endedAt ?? null, priority };
 }
 
 describe("needsReview", () => {
@@ -34,6 +35,19 @@ describe("reviewTasks", () => {
       task("seen", "succeeded", 2000),
     ];
     expect(reviewTasks(tasks, new Set(["seen"])).map((t) => t.id)).toEqual(["new", "old"]);
+  });
+
+  it("緊急タスクは先に終わっていなくても要対応の先頭に固定される", () => {
+    const tasks = [
+      task("normal-new", "succeeded", 3000),
+      task("urgent-old", "failed", 1000, "urgent"),
+      task("normal-mid", "succeeded", 2000),
+    ];
+    expect(reviewTasks(tasks, new Set()).map((t) => t.id)).toEqual([
+      "urgent-old",
+      "normal-new",
+      "normal-mid",
+    ]);
   });
 });
 

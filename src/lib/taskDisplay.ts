@@ -1,9 +1,14 @@
 /** タスク一覧の表示用グループ分け: 実行中を上部に固定し、それぞれ新しい順に並べる */
 
 export interface DisplayableTask {
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   startedAt: number;
   endedAt?: number | null;
+}
+
+/** まだ終わっていない(実行中・順番待ち)アクティブなタスクか */
+function isActive(status: DisplayableTask["status"]): boolean {
+  return status === "running" || status === "queued";
 }
 
 /** プロジェクト初出順を保ったまま、タスクをプロジェクトごとの配列にまとめる */
@@ -23,10 +28,15 @@ export function splitTasks<T extends DisplayableTask>(
   tasks: T[],
 ): { running: T[]; finished: T[] } {
   const running = tasks
-    .filter((t) => t.status === "running")
-    .sort((a, b) => b.startedAt - a.startedAt);
+    .filter((t) => isActive(t.status))
+    // 実行中を先に、順番待ちを後に。各グループ内は新しい順
+    .sort(
+      (a, b) =>
+        Number(a.status === "queued") - Number(b.status === "queued") ||
+        b.startedAt - a.startedAt,
+    );
   const finished = tasks
-    .filter((t) => t.status !== "running")
+    .filter((t) => !isActive(t.status))
     .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt));
   return { running, finished };
 }

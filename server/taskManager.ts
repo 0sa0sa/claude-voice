@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { TaskStore } from "./taskStore.js";
+import { selectToStart, type QueuePriority } from "./taskQueue.js";
 
 export interface TaskEvent {
   kind: "delta" | "tool" | "error" | "instruction";
@@ -7,7 +8,7 @@ export interface TaskEvent {
   at: number;
 }
 
-export type TaskStatus = "running" | "succeeded" | "failed" | "cancelled";
+export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface Task {
   id: string;
@@ -16,6 +17,8 @@ export interface Task {
   project: string;
   instruction: string;
   status: TaskStatus;
+  /** 実行キューの優先度。urgent(緊急)は queued の中で先に実行され、結果も最優先で通知される。 */
+  priority: QueuePriority;
   events: TaskEvent[];
   /** 実行中のClaude出力(ストリーム)の連結。末尾LIVE_TEXT_MAX文字だけ保持する途中経過 */
   liveText?: string;
@@ -73,6 +76,8 @@ export class TaskManager {
   // 実行中タスクへの追加指示キュー。CLIプロセスのstdinは起動時に閉じるため、
   // 現在の実行が終わり次第、同じセッションを--resumeで継いで消化する
   private pending = new Map<string, string[]>();
+  // queued タスクの実行本体。スロットが空いたら schedule() が取り出して起動する
+  private runners = new Map<string, () => Promise<void>>();
   private counter = 0;
   private lastSave: Promise<void> = Promise.resolve();
 
@@ -81,7 +86,29 @@ export class TaskManager {
     private store?: TaskStore,
     // 省略時はworktree分離なし(常にプロジェクト直下で実行)
     private workspaceProvider?: WorkspaceProvider,
+    /**
+     * 同時に "running" にできるタスク数の上限。超過分は "queued" で順番待ちになる。
+     * 重い claude -p プロセスの多重起動を防ぐ。既定は環境変数、無ければ3。
+     */
+    private maxConcurrent: number = Number(process.env.CLAUDE_VOICE_MAX_CONCURRENT) || 3,
   ) {}
+
+  /** 空きスロットに queued タスクを優先度順で昇格させ、実行を開始する。 */
+  private schedule(): void {
+    const ids = selectToStart([...this.tasks.values()], this.maxConcurrent);
+    let started = false;
+    for (const id of ids) {
+      const run = this.runners.get(id);
+      const task = this.tasks.get(id);
+      if (!run || !task || task.status !== "queued") continue;
+      this.runners.delete(id);
+      task.status = "running";
+      started = true;
+      void run();
+    }
+    // 昇格でstatusが変わったので、保存済み履歴を running に更新する
+    if (started) this.persist();
+  }
 
   /** タスクの作成・終了のたびに全件を保存する。失敗してもタスク実行は止めない */
   private persist(): void {
@@ -106,11 +133,14 @@ export class TaskManager {
     // ファイルはlist()と同じ新しい順なので、古い順に登録してseq順を保つ
     for (const task of [...saved].reverse()) {
       if (this.tasks.has(task.id)) continue;
-      if (task.status === "running") {
+      // 実行中/順番待ちのまま残ったタスクはプロセスが既に無いため failed に補正する
+      if (task.status === "running" || task.status === "queued") {
         task.status = "failed";
         task.error = "サーバー再起動により中断されました";
         task.endedAt = task.endedAt ?? Date.now();
       }
+      // 旧形式の保存ファイルには priority が無いため補う
+      if (task.priority !== "urgent" && task.priority !== "normal") task.priority = "normal";
       // 旧形式の保存ファイルにはseqが無いため、読み込み順(古い順)で補う
       if (typeof task.seq !== "number") task.seq = this.counter + 1;
       this.counter = Math.max(this.counter, task.seq);
@@ -125,6 +155,8 @@ export class TaskManager {
     projectPath: string;
     instruction: string;
     resumeSessionId?: string;
+    /** 実行キューの優先度。省略時は normal。 */
+    priority?: QueuePriority;
     /**
      * 引き継ぎ元タスクの作業ディレクトリ。--resumeは同一cwdのセッションしか
      * 見えないため、指定時は新しいworktreeを作らず元の場所で実行する。
@@ -136,7 +168,9 @@ export class TaskManager {
       seq: ++this.counter,
       project: opts.project,
       instruction: opts.instruction,
-      status: "running",
+      // 作成時は queued。スロットに空きがあれば直後の schedule() で即 running へ昇格する
+      status: "queued",
+      priority: opts.priority ?? "normal",
       events: [],
       startedAt: Date.now(),
       ...(opts.resumeSessionId ? { resumedFrom: opts.resumeSessionId } : {}),
@@ -145,7 +179,6 @@ export class TaskManager {
     this.pending.set(task.id, []);
     const abort = new AbortController();
     this.aborts.set(task.id, abort);
-    this.persist();
 
     const pushEvent = (e: TaskSpawnerEvent) => {
       // session通知はイベントログには出さず、resume用にタスクへ記録するだけ
@@ -172,22 +205,21 @@ export class TaskManager {
         signal: abort.signal,
       });
 
-    // 実行cwdを決める。resume時は元タスクの場所を再利用し(--resumeは同一cwdの
-    // セッションしか見えない)、providerがある新規タスクのみ非同期でworktreeを
-    // 用意する。それ以外は従来どおり同期でspawnerが起動する
-    let cwd: string | Promise<string> = opts.projectPath;
-    if (opts.resumeSessionId || opts.workspace) {
-      if (opts.workspace?.worktreePath) {
-        task.worktreePath = opts.workspace.worktreePath;
-        task.branch = opts.workspace.branch;
-        cwd = opts.workspace.worktreePath;
-      }
-    } else if (this.workspaceProvider) {
-      cwd = this.prepareWorkspace(task, opts.project, opts.projectPath);
-    }
-
     const runLoop = async () => {
       try {
+        // 実行cwdを決める(実際に走り出す=スケジュールされた時点で行う。順番待ちの間は
+        // worktreeを作らない)。resume時は元タスクの場所を再利用し(--resumeは同一cwdの
+        // セッションしか見えない)、providerがある新規タスクのみworktreeを用意する。
+        let cwd: string | Promise<string> = opts.projectPath;
+        if (opts.resumeSessionId || opts.workspace) {
+          if (opts.workspace?.worktreePath) {
+            task.worktreePath = opts.workspace.worktreePath;
+            task.branch = opts.workspace.branch;
+            cwd = opts.workspace.worktreePath;
+          }
+        } else if (this.workspaceProvider) {
+          cwd = this.prepareWorkspace(task, opts.project, opts.projectPath);
+        }
         const resolvedCwd = typeof cwd === "string" ? cwd : await cwd;
         if ((task.status as TaskStatus) !== "running") return;
         let { text, sessionId } = await runOnce(opts.instruction, resolvedCwd, opts.resumeSessionId);
@@ -211,10 +243,16 @@ export class TaskManager {
         task.endedAt = Date.now();
         this.aborts.delete(task.id);
         this.pending.delete(task.id);
+        this.runners.delete(task.id);
         this.persist();
+        // スロットが空いたので、順番待ちの次タスクを昇格させる
+        this.schedule();
       }
     };
-    void runLoop();
+    // すぐには走らせず、スケジューラに委ねる。空きがあれば即 running へ昇格する。
+    this.runners.set(task.id, runLoop);
+    this.persist();
+    this.schedule();
 
     return task;
   }
@@ -298,7 +336,18 @@ export class TaskManager {
   cancel(id: string): boolean {
     const task = this.tasks.get(id);
     const abort = this.aborts.get(id);
-    if (!task || !abort || task.status !== "running") return false;
+    if (!task || !abort) return false;
+    // 順番待ち(queued)のタスクは実行前に取り下げる。実行中はabortで打ち切る。
+    if (task.status === "queued") {
+      task.status = "cancelled";
+      task.endedAt = Date.now();
+      this.runners.delete(id);
+      this.aborts.delete(id);
+      this.pending.delete(id);
+      this.persist();
+      return true;
+    }
+    if (task.status !== "running") return false;
     task.status = "cancelled";
     abort.abort();
     this.persist();

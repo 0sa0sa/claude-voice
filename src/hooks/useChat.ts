@@ -52,8 +52,20 @@ export function useChat(
     });
   }, []);
 
+  // 進行中の応答があるバージイン発話が来たら、待たずに前の応答を打ち切って新しい発話を送る。
+  const activeAbortRef = useRef<AbortController | null>(null);
+
+  /** 進行中の応答を打ち切る(緊急発話の割り込み・発話キューの前倒し用)。 */
+  const interrupt = useCallback(() => {
+    activeAbortRef.current?.abort();
+  }, []);
+
   const send = useCallback(
     async (message: string) => {
+      activeAbortRef.current?.abort(); // 前の応答が進行中なら打ち切る(バージイン)
+      const controller = new AbortController();
+      activeAbortRef.current = controller;
+
       const userMsg: ChatMessage = { id: nextId(), role: "user", text: message };
       const assistantId = nextId();
       setMessages((prev) => [
@@ -71,6 +83,7 @@ export function useChat(
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ browserSessionId, message }),
+          signal: controller.signal,
         });
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -107,17 +120,27 @@ export function useChat(
         }
         if (finalText) onReplyDoneRef.current?.(finalText);
       } catch (err) {
-        patchAssistant((m) => ({
-          ...m,
-          text: `接続エラー: ${err instanceof Error ? err.message : String(err)}`,
-          streaming: false,
-        }));
+        if (controller.signal.aborted) {
+          // 新しい発話に打ち切られただけ: エラー表示はせず、途中までの本文で確定させる
+          patchAssistant((m) => ({ ...m, streaming: false }));
+        } else {
+          patchAssistant((m) => ({
+            ...m,
+            text: `接続エラー: ${err instanceof Error ? err.message : String(err)}`,
+            streaming: false,
+          }));
+        }
       } finally {
-        setBusy(false);
+        // 打ち切られた古い呼び出しのfinallyが、後発の呼び出しのbusy/abort状態を
+        // 上書きしないようにする
+        if (activeAbortRef.current === controller) {
+          activeAbortRef.current = null;
+          setBusy(false);
+        }
       }
     },
     [browserSessionId],
   );
 
-  return { messages, busy, send, addInterjection, addSystem, patchLastUserMessage };
+  return { messages, busy, send, interrupt, addInterjection, addSystem, patchLastUserMessage };
 }

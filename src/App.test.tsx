@@ -152,6 +152,62 @@ describe("App", () => {
     expect(within(panel).getByText("1 失敗")).toBeInTheDocument();
   });
 
+  it("shows the task's sequence badge as the primary id on task cards", async () => {
+    const tasks = [
+      {
+        id: "0a18faeb-aaaa-bbbb-cccc-dddddddddddd",
+        seq: 7,
+        project: "claude-voice",
+        instruction: "テストを実行する",
+        status: "running",
+        startedAt: Date.now() - 60_000,
+        lastEvent: null,
+        result: null,
+        error: null,
+      },
+    ];
+    vi.mocked(fetch).mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.includes("/api/health")) return Response.json({ ok: true, mode: "mock" });
+      if (path.includes("/api/projects")) return Response.json({ projects: [], active: null });
+      if (path.includes("/api/tasks")) return Response.json({ tasks });
+      return Response.json({ interject: false, question: "" });
+    });
+    render(<App />);
+    const panel = await screen.findByRole("complementary", { name: "タスク" });
+    expect(within(panel).getByTestId("task-seq-badge-7")).toHaveTextContent("#7");
+    expect(within(panel).getByText("0a18faeb")).toBeInTheDocument();
+  });
+
+  it("falls back to the short id when a legacy server response omits seq", async () => {
+    // 古いバージョンのまま起動し続けているサーバープロセスは seq を返さないことがある
+    // (関連: docs参照。稼働中プロセスのコードは再起動するまで更新されない)。
+    // そのケースでもタスクカードに識別子が全く出ないと困るため、短縮IDへのフォールバックを保証する。
+    const tasks = [
+      {
+        id: "0a18faeb-aaaa-bbbb-cccc-dddddddddddd",
+        project: "claude-voice",
+        instruction: "テストを実行する",
+        status: "running",
+        startedAt: Date.now() - 60_000,
+        lastEvent: null,
+        result: null,
+        error: null,
+      },
+    ];
+    vi.mocked(fetch).mockImplementation(async (url: RequestInfo | URL) => {
+      const path = String(url);
+      if (path.includes("/api/health")) return Response.json({ ok: true, mode: "mock" });
+      if (path.includes("/api/projects")) return Response.json({ projects: [], active: null });
+      if (path.includes("/api/tasks")) return Response.json({ tasks });
+      return Response.json({ interject: false, question: "" });
+    });
+    render(<App />);
+    const panel = await screen.findByRole("complementary", { name: "タスク" });
+    expect(within(panel).queryByTestId(/task-seq-badge-/)).not.toBeInTheDocument();
+    expect(within(panel).getByText("0a18faeb")).toBeInTheDocument();
+  });
+
   it("filters tasks by project from the sidebar and switches the workspace", async () => {
     const tasks = [
       {

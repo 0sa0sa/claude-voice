@@ -5,9 +5,11 @@
 
 export interface ReviewableTaskLike {
   id: string;
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   startedAt: number;
   endedAt?: number | null;
+  /** 緊急タスクは要対応一覧の先頭に固定して、戻ってきた結果を最優先で見せる。 */
+  priority?: "urgent" | "normal";
 }
 
 export function needsReview(task: ReviewableTaskLike, acked: ReadonlySet<string>): boolean {
@@ -21,7 +23,12 @@ export function reviewTasks<T extends ReviewableTaskLike>(
 ): T[] {
   return tasks
     .filter((t) => needsReview(t, acked))
-    .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt));
+    // 緊急を最優先で先頭へ、同順位内は新しく終わった順
+    .sort(
+      (a, b) =>
+        Number(b.priority === "urgent") - Number(a.priority === "urgent") ||
+        (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt),
+    );
 }
 
 export function pruneAcked(acked: Iterable<string>, tasks: ReviewableTaskLike[]): string[] {

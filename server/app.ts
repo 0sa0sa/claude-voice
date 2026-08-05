@@ -6,6 +6,7 @@ import { decideInterjection } from "./interjection.js";
 import type { ProjectInfo } from "./projects.js";
 import { SessionStore } from "./sessions.js";
 import type { Task, TaskManager } from "./taskManager.js";
+import { classifyTaskPriority } from "./taskPriority.js";
 import type { ThreadLog } from "./threadLog.js";
 import type { ChatRunner, ClaudeEvent, QuickAsk } from "./types.js";
 
@@ -27,6 +28,7 @@ const SYSTEM_STYLE = [
   "毎ターン冒頭の[状況]にプロジェクト一覧・アクティブプロジェクト・タスク状態が入る。それを踏まえて答えて。",
   "ユーザーが実作業(実装・修正・テスト・調査など)を頼んだら、返答の最後に次の形式の行を1行追加して: ",
   '@@CV {"action":"start_task","project":"プロジェクト名","instruction":"具体的な作業指示"}',
+  "1回の発話に独立した作業依頼が複数含まれる場合は、それらを1つのタスクにまとめず、依頼ごとに別々のstart_task行を追加して。",
   "タスクの指定は[状況]に付いている連番で行い、会話でも「タスク3」のように連番で呼んで。",
   "過去タスクの続き・修正・追加対応を頼まれたら、[状況]で[引き継ぎ可]が付いているタスクに限り ",
   '@@CV {"action":"start_task","resume":"#3","instruction":"続きの指示"} と連番のresumeを付けて。',
@@ -55,6 +57,7 @@ function summarizeTask(t: Task) {
     project: t.project,
     instruction: t.instruction,
     status: t.status,
+    priority: t.priority,
     startedAt: t.startedAt,
     endedAt: t.endedAt,
     lastEvent: t.events.at(-1)?.text ?? null,
@@ -197,6 +200,8 @@ export function createApp(deps: AppDeps) {
         project: name,
         projectPath: path,
         instruction,
+        // 「緊急」「至急」等を含む依頼は実行キューで優先し、結果も最優先で通知する
+        priority: classifyTaskPriority(instruction),
         resumeSessionId,
         workspace,
       }),
@@ -312,9 +317,18 @@ export function createApp(deps: AppDeps) {
     }
     const session = sessions.get(browserSessionId);
 
+    // バージイン: 同一セッションで前の応答がまだ進行中なら打ち切り、新しい発話を優先する。
+    // 打ち切られた側の結果がセッション状態を後から上書きしないよう、abortでも判定する。
+    session.activeChatAbort?.abort();
+    const abort = new AbortController();
+    session.activeChatAbort = abort;
+    const isStale = () => session.activeChatAbort !== abort;
+
     return streamSSE(c, async (stream) => {
-      const send = (event: string, data: unknown) =>
-        stream.writeSSE({ event, data: JSON.stringify(data) });
+      const send = (event: string, data: unknown) => {
+        if (isStale()) return Promise.resolve();
+        return stream.writeSSE({ event, data: JSON.stringify(data) });
+      };
       try {
         // メイン会話(一対一)のログ。応答が失敗しても発話自体は残す
         deps.threadLog?.appendMain("user", message, Date.now());
@@ -325,6 +339,7 @@ export function createApp(deps: AppDeps) {
           tasks: deps.taskManager.list(),
         });
         const onEvent = (e: ClaudeEvent) => {
+          if (isStale()) return;
           if (e.kind === "session" && e.sessionId) {
             session.claudeSessionId = e.sessionId;
             void send("session", { sessionId: e.sessionId });
@@ -339,7 +354,9 @@ export function createApp(deps: AppDeps) {
           systemPrompt: SYSTEM_STYLE,
           resumeSessionId: session.claudeSessionId,
           onEvent,
+          signal: abort.signal,
         });
+        if (isStale()) return; // 新しい発話に打ち切られたので、この結果は反映しない
         if (result.sessionId) session.claudeSessionId = result.sessionId;
 
         const { directives, cleanText } = extractDirectives(result.text);
@@ -350,7 +367,10 @@ export function createApp(deps: AppDeps) {
         if (cleanText.trim()) deps.threadLog?.appendMain("assistant", cleanText, Date.now());
         await send("done", { text: cleanText });
       } catch (err) {
+        if (isStale()) return; // 打ち切られた側のエラーは無視する
         await send("error", { message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        if (session.activeChatAbort === abort) session.activeChatAbort = undefined;
       }
     });
 

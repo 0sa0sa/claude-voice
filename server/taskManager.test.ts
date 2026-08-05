@@ -618,4 +618,77 @@ describe("TaskManager", () => {
     await tick();
     expect(tm.get(task.id)!.events.length).toBeLessThanOrEqual(200);
   });
+
+  describe("execution queue (同時実行数の上限と優先度)", () => {
+    /** 各実行をテストから1件ずつ完了させられるspawner */
+    function gatedSpawner() {
+      const started: string[] = [];
+      let pending: Array<(v: { text: string }) => void> = [];
+      const spawner: TaskSpawner = ({ instruction }) => {
+        // 実行時は指示末尾に報告体裁ディレクティブが付くため、先頭行(元の指示)だけ記録する
+        started.push(instruction.split("\n")[0]);
+        return new Promise((res) => pending.push((v) => res(v)));
+      };
+      const finishOne = (text = "ok") => pending.shift()?.({ text });
+      return { spawner, started, finishOne };
+    }
+
+    it("keeps tasks beyond the concurrency limit queued until a slot frees up", async () => {
+      const { spawner, started, finishOne } = gatedSpawner();
+      const tm = new TaskManager(spawner, undefined, undefined, 1);
+      const a = tm.start({ project: "p", projectPath: "/tmp/p", instruction: "first" });
+      const b = tm.start({ project: "p", projectPath: "/tmp/p", instruction: "second" });
+      // 上限1なので1件目だけ running、2件目は queued で待機
+      expect(tm.get(a.id)!.status).toBe("running");
+      expect(tm.get(b.id)!.status).toBe("queued");
+      expect(started).toEqual(["first"]);
+      // 1件目が完了するとスロットが空き、2件目が昇格して走り出す
+      finishOne();
+      await tick();
+      expect(tm.get(a.id)!.status).toBe("succeeded");
+      expect(tm.get(b.id)!.status).toBe("running");
+      expect(started).toEqual(["first", "second"]);
+    });
+
+    it("promotes an urgent queued task ahead of earlier normal ones", async () => {
+      const { spawner, started, finishOne } = gatedSpawner();
+      const tm = new TaskManager(spawner, undefined, undefined, 1);
+      tm.start({ project: "p", projectPath: "/tmp/p", instruction: "normal-1" });
+      tm.start({ project: "p", projectPath: "/tmp/p", instruction: "normal-2" });
+      tm.start({
+        project: "p",
+        projectPath: "/tmp/p",
+        instruction: "urgent-late",
+        priority: "urgent",
+      });
+      finishOne(); // running中のnormal-1を完了 → 次に緊急が割り込む
+      await tick();
+      expect(started).toEqual(["normal-1", "urgent-late"]);
+    });
+
+    it("cancels a queued task without ever running it", async () => {
+      const { spawner, started } = gatedSpawner();
+      const tm = new TaskManager(spawner, undefined, undefined, 1);
+      tm.start({ project: "p", projectPath: "/tmp/p", instruction: "running" });
+      const q = tm.start({ project: "p", projectPath: "/tmp/p", instruction: "waiting" });
+      expect(tm.get(q.id)!.status).toBe("queued");
+      expect(tm.cancel(q.id)).toBe(true);
+      expect(tm.get(q.id)!.status).toBe("cancelled");
+      await tick();
+      // 取り下げたタスクの指示はspawnerへ渡らない
+      expect(started).toEqual(["running"]);
+    });
+
+    it("carries the priority through to the task record", () => {
+      const { spawner } = gatedSpawner();
+      const tm = new TaskManager(spawner, undefined, undefined, 3);
+      const t = tm.start({
+        project: "p",
+        projectPath: "/tmp/p",
+        instruction: "x",
+        priority: "urgent",
+      });
+      expect(t.priority).toBe("urgent");
+    });
+  });
 });

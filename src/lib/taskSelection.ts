@@ -3,7 +3,7 @@
  * サーバーの resolveResume と同じ制約: 実行中は不可、セッションを残していないタスクも不可。
  */
 export interface SelectableTaskLike {
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   /** 旧サーバーのペイロードにはキー自体が無い(undefined)ことがある */
   sessionId?: string | null;
 }

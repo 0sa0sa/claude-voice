@@ -11,6 +11,7 @@
   --amber: #e8b34b;
   --ok: #7ec97f;
   --err: #e06c5b;
+  --clarify: #c98bf0;
   --line: #262c4a;
   --mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", "Cascadia Code", monospace;
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
@@ -162,14 +163,16 @@ body {
   animation: hud-scan-sweep 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
+/* 起動アニメーションは transform ではなく独立した translate プロパティで動かす。
+   fill:both で終了状態を固定してもパネルの 3D transform(奥行き)を上書きしないため。 */
 @keyframes hud-boot-in {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    translate: 0 -6px;
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: 0 0;
   }
 }
 
@@ -1598,6 +1601,24 @@ input:focus-visible,
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-raise));
 }
 
+/* ---- 要確認(succeededでも質問/確認待ちで止まっている疑いのあるタスク) ---- */
+
+/* 他の状態色(緑=成功, 赤=失敗, 藍=要対応)と被らない紫で「完了したはずなのに違う」を示す */
+.task-clarify {
+  border-color: color-mix(in srgb, var(--clarify) 65%, var(--line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--clarify) 35%, transparent);
+}
+
+.task-clarify-badge {
+  background: color-mix(in srgb, var(--clarify) 24%, transparent);
+  color: var(--clarify);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
 .chip-review.is-active {
   background: color-mix(in srgb, var(--accent) 22%, var(--bg-raise));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1689,4 +1710,325 @@ input:focus-visible,
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ============================================================
+   SPATIAL WORKSPACE — オブジェクト中心のホログラム3Dコンソール
+   ------------------------------------------------------------
+   ページ遷移のない単一の永続シーン。3つのパネルを奥行きを持つ
+   ホログラム平面として空間に配置し、ポインタ視差で覗き込むように
+   傾ける。会話に応じてオブジェクト(発話カード・タスク)が
+   実体化し、手前へ持ち上がり、滑って再配置される。
+   既存のフラットHUD層の「上に」3D変換を重ねる(後勝ちで上書き)。
+   CSS変数 --px/--py は useSceneParallax がポインタ位置を書き込む。
+   ============================================================ */
+.app {
+  --px: 0;
+  --py: 0;
+  perspective: 2200px;
+  perspective-origin: calc(50% + var(--px) * 7%) calc(44% + var(--py) * 6%);
+}
+
+/* シーンの床: パネル群を共有の3D空間へ置き、覗き込む角度を作る。
+   ヘッダーは平面のまま、その下のワークスペースだけが立体的に傾く。 */
+.body {
+  transform-style: preserve-3d;
+  gap: 14px;
+  padding: 16px 18px;
+  transform: rotateX(calc(var(--py) * -1.1deg)) rotateY(calc(var(--px) * 1.5deg));
+  transition: transform 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* パネル = 空間に浮かぶホログラム平面。側面パネルはコックピットのように
+   内側へ角度を持ち、中央(会話)が最も手前に立つ。 */
+.sidebar,
+.main,
+.tasks {
+  transform-style: preserve-3d;
+  border-radius: 16px;
+  transition:
+    transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 0.5s ease,
+    border-color 0.4s ease;
+  will-change: transform;
+}
+
+.sidebar:not(.is-collapsed) {
+  transform-origin: left center;
+  transform: translateZ(-70px) rotateY(10deg);
+  box-shadow:
+    0 30px 60px -30px rgb(0 0 0 / 0.7),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-glow) 10%, transparent);
+}
+
+.tasks {
+  transform-origin: right center;
+  transform: translateZ(-70px) rotateY(-10deg);
+  box-shadow:
+    0 30px 60px -30px rgb(0 0 0 / 0.7),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-glow) 10%, transparent);
+}
+
+.main {
+  transform: translateZ(24px);
+  box-shadow: 0 40px 80px -40px rgb(0 0 0 / 0.6);
+}
+
+/* パネルに触れる(ホバー/フォーカス)と正面を向いて手前へ来る =
+   ホログラムを手に取って引き寄せる感覚。 */
+.sidebar:not(.is-collapsed):hover,
+.sidebar:not(.is-collapsed):focus-within {
+  transform: translateZ(40px) rotateY(2deg);
+  box-shadow:
+    0 40px 70px -28px rgb(0 0 0 / 0.72),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-glow) 22%, transparent);
+}
+
+.tasks:hover,
+.tasks:focus-within {
+  transform: translateZ(40px) rotateY(-2deg);
+  box-shadow:
+    0 40px 70px -28px rgb(0 0 0 / 0.72),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-glow) 22%, transparent);
+}
+
+/* 折りたたみ: 幅を失うだけでなく、蝶番のように奥へ折れて消える。 */
+.sidebar.is-collapsed {
+  transform-origin: left center;
+  transform: translateX(-16px) rotateY(-75deg) translateZ(-40px);
+}
+
+/* 背景グリッド/粒子は前景より弱く逆方向へ動き、視差で奥行きを強調する。 */
+.hud-bg {
+  transform: translate3d(calc(var(--px) * -18px), calc(var(--py) * -14px), -120px);
+  transition: transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ---- オブジェクトの実体化(materialize): 発話・タスクはピントが合いながら
+        手前へ立ち上がる。パネル内はスクロール容器(overflow)で 3D が平面化
+        されるため、Z ではなく scale+translateY+blur で「迫り出し」を表現する。 ---- */
+@keyframes obj-materialize {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.955);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.bubble {
+  animation: obj-materialize 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  box-shadow: 0 16px 40px -22px rgb(0 0 0 / 0.7);
+  transition:
+    transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 0.35s ease;
+}
+
+/* 会話中のオブジェクトは浮遊感を持ち、触れると軽く手前へ迫り出す。 */
+.bubble:hover {
+  transform: translateY(-3px) scale(1.012);
+  box-shadow: 0 24px 50px -22px rgb(0 0 0 / 0.75);
+}
+
+/* タスクカード = 手前で操作するホログラムのタイル。
+   ※ animation プロパティは task-zoom/task-flash と競合するため使わず、
+     transform/box-shadow の transition だけで立体感を出す。 */
+.task {
+  transform-style: preserve-3d;
+  transition:
+    transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 0.4s ease,
+    border-color 0.3s ease;
+}
+
+.task:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 26px 50px -24px rgb(0 0 0 / 0.7);
+  z-index: 2;
+}
+
+/* 選択・注目中のタスクは一覧の中で手前へ持ち上がり、シアンの縁光を帯びる。 */
+.task-selected {
+  transform: translateY(-2px) scale(1.028);
+  z-index: 3;
+  box-shadow:
+    0 30px 60px -26px rgb(0 0 0 / 0.72),
+    0 0 0 1px color-mix(in srgb, var(--accent-glow) 55%, transparent),
+    0 0 26px -2px color-mix(in srgb, var(--accent-glow) 40%, transparent);
+}
+
+/* 実行中の作業プロジェクトは一覧の中で一段前に出る。 */
+.proj-row.is-viewing {
+  transform: scale(1.015);
+  transition: transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 発話中(ON AIR)のライブ入力は手前へ迫り出し、話者の存在を強調する。 */
+.live-strip.on-air {
+  transform: translateY(-2px) scale(1.006);
+  transition:
+    transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-color 0.3s,
+    box-shadow 0.3s;
+}
+
+/* 3D変換は影・境界だけに留め、テキストの可読性は損なわない。
+   奥行きが強すぎて操作しづらくならないよう、狭幅・低モーションでは平面へ戻す。 */
+@media (max-width: 1000px) {
+  .app {
+    perspective: none;
+  }
+  .body {
+    transform: none;
+  }
+  .sidebar:not(.is-collapsed),
+  .tasks,
+  .main {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .body,
+  .sidebar:not(.is-collapsed),
+  .tasks,
+  .main,
+  .bubble,
+  .task,
+  .task-selected,
+  .proj-row.is-viewing,
+  .live-strip.on-air,
+  .hud-bg {
+    transform: none;
+    animation: none;
+    transition: none;
+  }
+  .app {
+    perspective: none;
+  }
+}
+
+/* ============================================================
+   EXECUTION QUEUE & PRIORITY — 順番待ち / 緊急タスクの見た目
+   ============================================================ */
+
+/* 順番待ち(queued): まだ走っていないので彩度を落とし、静かに息づく */
+.task-queued {
+  border-left: 3px solid var(--ink-dim);
+  opacity: 0.9;
+}
+
+.task-queued .task-instruction {
+  color: var(--ink-dim);
+}
+
+.state-queued {
+  color: var(--ink-dim);
+}
+
+.icon-queued {
+  color: var(--ink-dim);
+  animation: blink 2s ease-in-out infinite;
+}
+
+.summary-chip.state-queued {
+  color: var(--ink-dim);
+}
+
+/* 緊急(urgent): 実行キューで優先され、結果も最優先。琥珀色で存在を主張する */
+.task-urgent {
+  border-left-color: var(--amber);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--amber) 30%, transparent);
+}
+
+.task-urgent-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--amber) 22%, var(--bg-raise));
+  border: 1px solid color-mix(in srgb, var(--amber) 60%, transparent);
+  color: var(--amber);
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+/* 緊急かつ要対応で戻ってきたタスクは、一覧の先頭で琥珀の縁光をまとって目立つ */
+.task-urgent.task-review {
+  box-shadow:
+    0 22px 44px -22px rgb(0 0 0 / 0.7),
+    0 0 0 1px color-mix(in srgb, var(--amber) 55%, transparent),
+    0 0 22px -2px color-mix(in srgb, var(--amber) 40%, transparent);
+}
+
+/* ---- 発話キュー: 応答中に積まれ、順番待ちしている発話を可視化する ---- */
+.queue-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raise));
+  animation: obj-materialize 0.35s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.queue-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.queue-items {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.queue-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.queue-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-item-urgent {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+  color: var(--ink);
+}
+
+.queue-item-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--amber) 22%, var(--bg-raise));
+  color: var(--amber);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue-strip {
+    animation: none;
+  }
 }

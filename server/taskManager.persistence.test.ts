@@ -37,6 +37,7 @@ function savedTask(overrides: Partial<Task> = {}): Task {
     project: "demo",
     instruction: "past work",
     status: "succeeded",
+    priority: "normal",
     events: [],
     result: "done",
     startedAt: 1000,

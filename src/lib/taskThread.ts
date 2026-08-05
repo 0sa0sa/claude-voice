@@ -7,7 +7,7 @@ export interface ThreadTaskLike {
   id: string;
   seq: number;
   instruction: string;
-  status: "running" | "succeeded" | "failed" | "cancelled";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   startedAt: number;
   endedAt?: number | null;
   result: string | null;
