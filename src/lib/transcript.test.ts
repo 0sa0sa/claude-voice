@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyRecognition,
+  detectSendCommand,
   emptyTranscript,
   fullText,
   shouldQueryInterjection,
@@ -32,6 +33,37 @@ describe("applyRecognition", () => {
     let s = emptyTranscript();
     s = applyRecognition(s, ["前半。"], "後半");
     expect(fullText(s)).toBe("前半。後半");
+  });
+});
+
+describe("detectSendCommand", () => {
+  it("detects a trailing 送信 and strips it from the body", () => {
+    expect(detectSendCommand("ログイン画面を作って送信")).toEqual({
+      triggered: true,
+      body: "ログイン画面を作って",
+    });
+  });
+
+  it("handles 送って / 送信して with trailing punctuation", () => {
+    expect(detectSendCommand("テストを回して、送って。")).toEqual({
+      triggered: true,
+      body: "テストを回して",
+    });
+    expect(detectSendCommand("これを実装して 送信して")).toEqual({
+      triggered: true,
+      body: "これを実装して",
+    });
+  });
+
+  it("does not trigger when 送信 appears mid-sentence", () => {
+    const r = detectSendCommand("送信ボタンの色を変えたい");
+    expect(r.triggered).toBe(false);
+    expect(r.body).toBe("送信ボタンの色を変えたい");
+  });
+
+  it("triggers but yields an empty body when only the command is spoken", () => {
+    expect(detectSendCommand("送信")).toEqual({ triggered: true, body: "" });
+    expect(detectSendCommand("送信して。")).toEqual({ triggered: true, body: "" });
   });
 });
 

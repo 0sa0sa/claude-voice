@@ -41,6 +41,9 @@ export function parseClaudeLine(line: string): ClaudeEvent | null {
     }
     return null;
   }
+  if (obj.type === "assistant") {
+    return null;
+  }
   if (obj.type === "result") {
     if (obj.subtype === "success") {
       return { kind: "result", text: obj.result ?? "", sessionId: obj.session_id };
@@ -48,4 +51,33 @@ export function parseClaudeLine(line: string): ClaudeEvent | null {
     return { kind: "error", text: obj.subtype ?? "unknown error", sessionId: obj.session_id };
   }
   return null;
+}
+
+/**
+ * Extracts tool invocations (name + short argument hint) from an assistant
+ * message line, for task activity display.
+ */
+export function parseToolUses(line: string): string[] {
+  let obj: any;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return [];
+  }
+  if (obj?.type !== "assistant" || !Array.isArray(obj.message?.content)) return [];
+  const out: string[] = [];
+  for (const block of obj.message.content) {
+    if (block?.type !== "tool_use") continue;
+    const input = block.input ?? {};
+    const hint =
+      typeof input.command === "string"
+        ? input.command
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : typeof input.pattern === "string"
+            ? input.pattern
+            : "";
+    out.push(hint ? `${block.name}: ${hint.slice(0, 60)}` : String(block.name ?? "tool"));
+  }
+  return out;
 }

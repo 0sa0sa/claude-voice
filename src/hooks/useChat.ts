@@ -2,23 +2,52 @@ import { useCallback, useRef, useState } from "react";
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "interjection";
+  role: "user" | "assistant" | "interjection" | "system";
   text: string;
   streaming?: boolean;
+}
+
+export interface DirectiveResult {
+  action: string;
+  ok: boolean;
+  detail?: string;
+  taskId?: string;
+  project?: string;
+  /** fix_transcript: 音声誤認識をLLMが文脈補正した後の発話全文 */
+  corrected?: string;
 }
 
 let idCounter = 0;
 const nextId = () => `m${++idCounter}`;
 
 /** Reads the /api/chat SSE stream and maintains the message list. */
-export function useChat(browserSessionId: string, onReplyDone?: (text: string) => void) {
+export function useChat(
+  browserSessionId: string,
+  onReplyDone?: (text: string) => void,
+  onDirective?: (d: DirectiveResult) => void,
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const onReplyDoneRef = useRef(onReplyDone);
   onReplyDoneRef.current = onReplyDone;
+  const onDirectiveRef = useRef(onDirective);
+  onDirectiveRef.current = onDirective;
 
   const addInterjection = useCallback((text: string) => {
     setMessages((prev) => [...prev, { id: nextId(), role: "interjection", text }]);
+  }, []);
+
+  const addSystem = useCallback((text: string) => {
+    setMessages((prev) => [...prev, { id: nextId(), role: "system", text }]);
+  }, []);
+
+  /** 直近のユーザー発話バブルの本文を差し替える(音声誤認識の文脈補正用)。 */
+  const patchLastUserMessage = useCallback((text: string) => {
+    setMessages((prev) => {
+      const idx = prev.map((m) => m.role).lastIndexOf("user");
+      if (idx === -1) return prev;
+      return prev.map((m, i) => (i === idx ? { ...m, text } : m));
+    });
   }, []);
 
   const send = useCallback(
@@ -60,6 +89,8 @@ export function useChat(browserSessionId: string, onReplyDone?: (text: string) =
             const data = JSON.parse(dataRaw);
             if (event === "delta") {
               patchAssistant((m) => ({ ...m, text: m.text + data.text }));
+            } else if (event === "directive") {
+              onDirectiveRef.current?.(data as DirectiveResult);
             } else if (event === "done") {
               finalText = data.text;
               patchAssistant((m) => ({ ...m, text: data.text || m.text, streaming: false }));
@@ -86,5 +117,5 @@ export function useChat(browserSessionId: string, onReplyDone?: (text: string) =
     [browserSessionId],
   );
 
-  return { messages, busy, send, addInterjection };
+  return { messages, busy, send, addInterjection, addSystem, patchLastUserMessage };
 }

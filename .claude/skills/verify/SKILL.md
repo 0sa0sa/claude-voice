@@ -39,3 +39,12 @@ PORT=8798 npx tsx server/index.ts &
 - 音声認識(Web Speech API)はヘッドレスでは駆動できない。GUI検証はキーボード入力経路で行い、
   音声経路は transcript ライブラリ+hooks のユニットテストとマイク実機で担保
 - jsdomには `scrollTo` がない(App.tsxでガード済み)。RTLのcleanupは `src/test-setup.ts` で明示
+
+## v2 (管制塔) の検証面
+
+1. `GET /api/projects?browserSessionId=x` → ~/projects のスキャン結果 + active
+2. `POST /api/workspace` {project} → 切替。不明プロジェクト → 404
+3. `POST /api/tasks` {instruction} → 実タスク起動(読み取り専用の安全な指示で: 「README.mdの1行目を読んで報告して。変更しないで」)。`GET /api/tasks/:id` をポーリングして succeeded + result を確認
+4. オーケストレーター: chatで「◯◯プロジェクトで××するタスクを開始して」→ SSEに `directive` イベント(ok:true, taskId)が出て、doneテキストに @@CV が残らないこと
+5. 状況照会: 「さっきのタスクどうなった？」→ [状況]コンテキストから実結果で回答すること
+6. GUI: タスクパネル(ステータスドット+結果)、プロジェクトセレクタ表示

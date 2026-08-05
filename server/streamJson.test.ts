@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LineBuffer, parseClaudeLine } from "./streamJson.js";
+import { LineBuffer, parseClaudeLine, parseToolUses } from "./streamJson.js";
 
 describe("LineBuffer", () => {
   it("splits complete lines from a chunk", () => {
@@ -79,5 +79,26 @@ describe("parseClaudeLine", () => {
       JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "hi" }] } }),
     );
     expect(e).toBeNull();
+  });
+});
+
+describe("parseToolUses", () => {
+  it("extracts tool names with argument hints from assistant messages", () => {
+    const line = JSON.stringify({
+      type: "assistant",
+      message: {
+        content: [
+          { type: "text", text: "実行します" },
+          { type: "tool_use", name: "Bash", input: { command: "npm test" } },
+          { type: "tool_use", name: "Edit", input: { file_path: "/tmp/a.ts" } },
+        ],
+      },
+    });
+    expect(parseToolUses(line)).toEqual(["Bash: npm test", "Edit: /tmp/a.ts"]);
+  });
+
+  it("returns empty for non-assistant or unparseable lines", () => {
+    expect(parseToolUses("garbage")).toEqual([]);
+    expect(parseToolUses(JSON.stringify({ type: "result" }))).toEqual([]);
   });
 });

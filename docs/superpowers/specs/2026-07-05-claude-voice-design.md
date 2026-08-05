@@ -73,3 +73,23 @@
 - Web Speech API: サーバーSTT(whisper等)よりセットアップゼロ・低遅延。制約(Chrome依存)はローカル用途で許容
 - Hono: 軽量、既存プロジェクト(hojokin-navi)と同系でユーザーに馴染みがある
 - ポート8790: 8787(bun)/8788(hojokin-navi)回避
+
+---
+
+# v2: 管制塔化 (2026-07-26)
+
+## 目的
+人間はclaude-voiceと話すだけで、プロジェクト選択・実装タスクの実行・進捗確認まで全てを進められる。
+
+## 追加アーキテクチャ
+- projects.ts: ~/projects をスキャン(git/package.json検出)。セッションごとの activeProject
+- taskManager.ts: ツール有効の claude CLI をプロジェクトcwdでspawnするジョブ管理。
+  状態(running/succeeded/failed/cancelled)、ツール使用ログ、結果テキスト、キャンセル。実行レーンは並列可
+- directives.ts: 会話Claudeの応答から `@@CV {json}` 行を抽出・除去。
+  actions: switch_project / start_task / cancel_task。project "_root" は ~/projects 直下(新規作成用)
+- 会話レーン(既存chat)は毎ターン [状況] ヘッダ(アクティブプロジェクト/一覧/タスク状態)を注入。
+  ツールなし・1ターンのまま高速維持。実行はすべてディレクティブ経由でタスクレーンへ
+- API: GET /api/projects, POST /api/workspace, POST /api/tasks, GET /api/tasks(+/:id),
+  POST /api/tasks/:id/cancel。chat SSEに directive イベント追加
+- UI: ヘッダにプロジェクトセレクタ、タスクパネル(3秒ポーリング、完了遷移をTTSで報告)
+- 権限: タスクは CLAUDE_VOICE_PERMISSION_MODE (既定 acceptEdits)。ローカル専用前提

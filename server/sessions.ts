@@ -1,6 +1,7 @@
 /** In-memory per-browser-session state. */
 export interface SessionState {
   claudeSessionId?: string;
+  activeProject?: string;
   seenTriggers: string[];
   /** Transcript length at the last interjection; only re-interject once the user has said more. */
   lastInterjectLen: number;
