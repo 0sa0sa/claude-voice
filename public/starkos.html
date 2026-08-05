@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23c9a227' stroke-width='2.5'/%3E%3C/svg%3E" />
+<title>STARK OS — claude-voice</title>
+<style>
+:root{
+  --bg: oklch(0.12 0.006 90);
+  --bg-raise: oklch(0.16 0.01 90);
+  --ink: oklch(0.93 0.01 90);
+  --ink-mute: oklch(0.66 0.02 90);
+  --gold: oklch(0.74 0.11 87);
+  --gold-dim: oklch(0.52 0.07 87);
+  --gold-bright: oklch(0.88 0.09 90);
+  --line: oklch(0.74 0.11 87 / 0.16);
+  --line-strong: oklch(0.74 0.11 87 / 0.42);
+  --green: oklch(0.72 0.14 150);
+  --green-dim: oklch(0.5 0.09 150);
+  --red: oklch(0.64 0.19 25);
+  --font: "Noto Sans JP", -apple-system, "Hiragino Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0; background:var(--bg); color:var(--ink); font-family:var(--font); -webkit-font-smoothing:antialiased; overflow:hidden;}
+button,input,textarea{font:inherit; color:inherit;}
+::selection{background:oklch(0.74 0.11 87 / 0.3);}
+.mono{font-family:var(--mono);}
+
+#grid-bg{position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5;
+  background-image:linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size:46px 46px; mask-image:radial-gradient(ellipse 90% 80% at 50% 40%, #000 55%, transparent 92%);}
+
+#os{position:relative; z-index:1; display:grid; height:100vh; gap:12px; padding:12px 14px;
+  grid-template-columns:322px 1fr 340px; grid-template-rows:auto 1fr auto;
+  grid-template-areas:"top top top" "left center right" "dock dock dock";}
+
+/* ---- panels / HUD frame ---- */
+.panel{position:relative; border:1px solid var(--line); border-radius:3px; background:oklch(0.14 0.008 90 / 0.6); min-height:0; display:flex; flex-direction:column;}
+.panel::before{content:""; position:absolute; inset:0; pointer-events:none; opacity:.6;
+  background:
+    linear-gradient(var(--gold),var(--gold)) top left/13px 1.5px no-repeat, linear-gradient(var(--gold),var(--gold)) top left/1.5px 13px no-repeat,
+    linear-gradient(var(--gold),var(--gold)) top right/13px 1.5px no-repeat, linear-gradient(var(--gold),var(--gold)) top right/1.5px 13px no-repeat,
+    linear-gradient(var(--gold),var(--gold)) bottom left/13px 1.5px no-repeat, linear-gradient(var(--gold),var(--gold)) bottom left/1.5px 13px no-repeat,
+    linear-gradient(var(--gold),var(--gold)) bottom right/13px 1.5px no-repeat, linear-gradient(var(--gold),var(--gold)) bottom right/1.5px 13px no-repeat;}
+.panel.flash{animation:flash .9s ease-out;}
+@keyframes flash{0%{box-shadow:0 0 0 1px var(--gold), 0 0 22px var(--gold);} 100%{box-shadow:none;}}
+.p-head{display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid var(--line); flex:none;}
+.p-code{font-family:var(--mono); font-size:10px; letter-spacing:.14em; color:var(--gold);}
+.p-title{font-family:var(--mono); font-size:10px; letter-spacing:.22em; color:var(--ink-mute); text-transform:uppercase;}
+.p-head .sp{flex:1;}
+.p-icn{color:var(--gold-dim); font-size:12px; cursor:pointer; background:none; border:none; padding:2px;}
+.p-icn:hover{color:var(--gold);}
+.p-body{flex:1; overflow-y:auto; padding:8px;}
+.p-body::-webkit-scrollbar{width:7px;} .p-body::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:4px;}
+
+/* ---- top bar ---- */
+.topbar{grid-area:top; display:flex; align-items:center; gap:16px; padding:2px 4px;}
+.brand{font-family:var(--mono); font-size:15px; letter-spacing:.28em; color:var(--gold-bright); font-weight:600;}
+.brand b{color:var(--ink);}
+.divider{width:1px; height:16px; background:var(--line-strong);}
+.crumb{font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--ink-mute);}
+.crumb .code{color:var(--gold); margin:0 6px;}
+.crumb .nm{color:var(--ink);}
+.topbar .sp{flex:1;}
+.chips{display:flex; gap:6px;}
+.chip{font-family:var(--mono); font-size:10px; letter-spacing:.1em; padding:4px 8px; border:1px solid var(--line); border-radius:2px; color:var(--gold-dim); background:none; cursor:pointer;}
+.chip:hover{border-color:var(--line-strong); color:var(--gold);}
+.chip.on{color:var(--bg); background:var(--gold); border-color:var(--gold);}
+#clock{font-family:var(--mono); font-size:12px; color:var(--gold); letter-spacing:.1em; min-width:44px; text-align:right;}
+
+/* areas */
+.col-left{grid-area:left; display:flex; flex-direction:column; gap:12px; min-height:0;}
+.center{grid-area:center; min-height:0;}
+.col-right{grid-area:right; display:flex; flex-direction:column; gap:12px; min-height:0;}
+#brief{flex:1.1;} #comms{flex:1;} #artifacts{flex:.9;} #activity{flex:1.2;}
+
+/* ---- mission brief (projects) ---- */
+.mission{display:flex; align-items:center; gap:9px; width:100%; text-align:left; padding:10px 11px; border:1px solid transparent; border-radius:2px; background:none; color:inherit; cursor:pointer; margin-bottom:2px;}
+.mission:hover{background:oklch(0.74 0.11 87 / 0.06);}
+.mission.active{border-color:var(--line-strong); background:oklch(0.74 0.11 87 / 0.09);}
+.mission .dot{width:7px; height:7px; border-radius:50%; background:var(--gold-dim); flex:none;}
+.mission.run .dot{background:var(--gold); box-shadow:0 0 8px var(--gold); animation:blink 1.6s infinite;}
+.mission.fail .dot{background:var(--red); box-shadow:0 0 8px var(--red);}
+.mission.done .dot{background:var(--green);}
+.mission .mc{font-family:var(--mono); font-size:11px; color:var(--gold); letter-spacing:.06em; flex:none; width:42px;}
+.mission .mn{font-size:13px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.mission .cnt{font-family:var(--mono); font-size:10px; color:var(--ink-mute);}
+@keyframes blink{50%{opacity:.4;}}
+
+/* ---- task matrix (center) ---- */
+.matrix{display:grid; grid-template-columns:minmax(230px,34%) 1fr; gap:0; height:100%;}
+.mx-list{border-right:1px solid var(--line); overflow-y:auto; padding:8px;}
+.mx-detail{overflow-y:auto; padding:18px 22px;}
+.tk{display:block; width:100%; text-align:left; background:none; border:none; color:inherit; cursor:pointer; padding:11px 10px 13px; border-radius:2px; position:relative; margin-bottom:3px;}
+.tk:hover{background:oklch(0.74 0.11 87 / 0.05);}
+.tk.sel{background:oklch(0.74 0.11 87 / 0.1);}
+.tk .row1{display:flex; align-items:baseline; gap:8px;}
+.tk .bullet{color:var(--gold); font-size:9px;}
+.tk .ti{flex:1; min-width:0; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.tk .pc{font-family:var(--mono); font-size:10px; color:var(--ink-mute);}
+.tk .bar{position:absolute; left:10px; right:10px; bottom:6px; height:2px; background:oklch(0.74 0.11 87 / 0.12); border-radius:2px; overflow:hidden;}
+.tk .bar i{display:block; height:100%; background:var(--gold); width:0%;}
+.tk.st-succeeded .ti{color:var(--ink-mute); text-decoration:line-through;} .tk.st-succeeded .bullet{color:var(--green);} .tk.st-succeeded .bar i{background:var(--green);}
+.tk.st-failed .bullet{color:var(--red);} .tk.st-failed .bar i{background:var(--red);}
+.tk.st-running .bullet{animation:blink 1.4s infinite;} .tk.st-running .bar i{background:var(--gold); animation:indet 1.6s ease-in-out infinite;}
+.tk.st-queued .ti{color:var(--ink-mute);} .tk.st-queued .bullet{color:var(--gold-dim);}
+.tk .urg{font-family:var(--mono); font-size:8px; color:var(--red); border:1px solid var(--red); border-radius:6px; padding:0 4px; margin-left:4px;}
+@keyframes indet{0%{width:12%; margin-left:0;} 50%{width:52%; margin-left:44%;} 100%{width:12%; margin-left:88%;}}
+
+.mx-detail .st{font-family:var(--mono); font-size:10px; letter-spacing:.16em; color:var(--gold); text-transform:uppercase;}
+.mx-detail .st.done{color:var(--green);} .mx-detail .st.fail{color:var(--red);}
+.mx-detail h2{margin:6px 0 12px; font-size:21px; font-weight:600; line-height:1.35;}
+.mx-detail p.desc{font-size:13.5px; line-height:1.8; color:var(--ink); white-space:pre-wrap; margin:0 0 18px;}
+.check{display:flex; align-items:flex-start; gap:10px; padding:11px 13px; border:1px solid var(--line); border-radius:2px; margin-bottom:8px; font-size:13px;}
+.check .box{width:15px; height:15px; border:1px solid var(--gold-dim); border-radius:2px; flex:none; margin-top:1px; display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--green);}
+.check.on{color:var(--ink-mute);} .check.on .txt{text-decoration:line-through;} .check.on .box{border-color:var(--green); background:oklch(0.72 0.14 150 / 0.14);}
+.check .txt{flex:1; min-width:0; overflow-wrap:anywhere;}
+.mx-empty{color:var(--ink-mute); font-size:13px; text-align:center; margin-top:40px; line-height:1.9;}
+.acts{display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;}
+.act{font-family:var(--mono); font-size:11px; letter-spacing:.08em; padding:8px 14px; border:1px solid var(--line-strong); border-radius:2px; background:none; color:var(--ink); cursor:pointer;}
+.act:hover{border-color:var(--gold);}
+.act.ok{color:var(--green); border-color:var(--green-dim);} .act.ok:hover{border-color:var(--green);}
+.act.bad{color:var(--red); border-color:oklch(0.64 0.19 25 / 0.4);} .act.bad:hover{border-color:var(--red);}
+.instruct{display:flex; gap:8px; margin-top:12px;}
+.instruct input{flex:1; background:var(--bg); border:1px solid var(--line-strong); border-radius:2px; padding:9px 11px; font-size:13px; outline:none;}
+
+/* ---- comms log (chat) ---- */
+.msg{margin-bottom:14px;}
+.msg .who{font-family:var(--mono); font-size:9px; letter-spacing:.16em; margin-bottom:4px;}
+.msg.assistant .who, .msg.interjection .who{color:var(--gold);}
+.msg.user .who{color:var(--ink-mute); display:flex; align-items:center; gap:5px;}
+.msg.system .who{color:var(--gold-dim);}
+.msg .tx{font-size:13px; line-height:1.7; white-space:pre-wrap; word-break:break-word;}
+.msg.system .tx{color:var(--ink-mute); font-size:12px;}
+.msg.interjection .tx{color:var(--gold-bright);}
+.comms-empty{color:var(--ink-mute); font-size:12px; line-height:1.9;}
+
+/* ---- artifacts ---- */
+.arti{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:none; color:inherit; cursor:pointer; padding:10px 11px; border-bottom:1px solid var(--line);}
+.arti:hover{background:oklch(0.74 0.11 87 / 0.06);}
+.arti .ic{font-family:var(--mono); color:var(--gold); font-size:12px; width:16px; flex:none;}
+.arti .an{flex:1; min-width:0; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.arti .as{font-family:var(--mono); font-size:9px; color:var(--ink-mute);}
+.empty-min{color:var(--ink-mute); font-size:11.5px; padding:8px;}
+
+/* ---- activity ---- */
+.act-item{display:flex; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line);}
+.act-item .tm{font-family:var(--mono); font-size:9px; color:var(--gold-dim); flex:none; width:38px; padding-top:2px;}
+.act-item .ab{flex:1; min-width:0;}
+.act-item .al{font-family:var(--mono); font-size:9px; letter-spacing:.1em; color:var(--ink-mute); text-transform:uppercase;}
+.act-item .at{font-size:12.5px; margin-top:2px; overflow-wrap:anywhere;}
+.act-item.review .al{color:var(--gold);}
+.act-item .approve{display:flex; gap:6px; margin-top:6px;}
+.act-item .approve button{font-family:var(--mono); font-size:11px; width:26px; height:22px; border-radius:2px; border:1px solid var(--line-strong); background:none; cursor:pointer;}
+.act-item .approve .y{color:var(--green); border-color:var(--green-dim);}
+.act-item .approve .n{color:var(--red);}
+.act-item .dot{width:6px;height:6px;border-radius:50%;background:var(--gold-dim);margin-top:5px;flex:none;}
+.act-item.ok .dot{background:var(--green);} .act-item.fail .dot{background:var(--red);} .act-item.run .dot{background:var(--gold);box-shadow:0 0 6px var(--gold);}
+
+/* ---- dock (command bar) ---- */
+.dock{grid-area:dock; display:flex; align-items:center; gap:16px; padding:6px 6px 2px;}
+.reactor{width:58px; height:58px; flex:none; position:relative;}
+.reactor svg{width:100%; height:100%;}
+.reactor .r-out{fill:none; stroke:var(--line-strong); stroke-width:1; stroke-dasharray:3 4;}
+.reactor .r-in{fill:none; stroke:var(--gold); stroke-width:1.5; opacity:.5;}
+.reactor .r-core{fill:var(--gold); opacity:.85; filter:drop-shadow(0 0 6px var(--gold));}
+.reactor.live .r-out{animation:spin 8s linear infinite; transform-origin:center;}
+.reactor.live .r-core{animation:pulse 1.4s ease-in-out infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{50%{opacity:.4;}}
+.dstat{font-family:var(--mono); font-size:11px; letter-spacing:.08em; color:var(--ink-mute); flex:none; min-width:150px;}
+.dstat b{color:var(--gold);}
+.cmd{flex:1; display:flex; align-items:center; gap:10px; border:1px solid var(--line-strong); border-radius:3px; padding:6px 8px 6px 16px; background:oklch(0.14 0.008 90 / 0.6);}
+.cmd input{flex:1; background:none; border:none; outline:none; font-size:14px; color:var(--ink);}
+.cmd input::placeholder{color:var(--ink-mute);}
+.cmd .live{color:var(--gold); font-size:13px; max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.iconbtn{background:none; border:1px solid var(--line-strong); color:var(--gold); width:34px; height:34px; border-radius:2px; cursor:pointer; font-size:14px; flex:none;}
+.iconbtn:hover{border-color:var(--gold); background:oklch(0.74 0.11 87 / 0.1);}
+.iconbtn.on{background:var(--gold); color:var(--bg);}
+#queue-chips{display:flex; gap:5px; margin-left:4px;}
+.qc{font-family:var(--mono); font-size:9px; padding:2px 7px; border-radius:8px; border:1px solid var(--line); color:var(--ink-mute); max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.qc.urg{border-color:var(--red); color:var(--gold-bright);}
+
+@media (prefers-reduced-motion:reduce){ *{animation:none !important;} }
+</style>
+</head>
+<body>
+<div id="grid-bg"></div>
+<div id="os">
+  <div class="topbar">
+    <span class="brand">STARK <b>OS</b></span>
+    <span class="divider"></span>
+    <span class="crumb">PROJECT<span class="code" id="crumb-code">—</span><span class="nm" id="crumb-name">未選択</span></span>
+    <span class="sp"></span>
+    <span id="mode" class="mono" style="font-size:10px; color:var(--gold-dim); letter-spacing:.1em;"></span>
+    <div class="chips" id="chips"></div>
+    <span id="clock">--:--</span>
+  </div>
+
+  <div class="col-left">
+    <section class="panel" id="brief">
+      <div class="p-head"><span class="p-code">P-01</span><span class="p-title">Mission Brief</span><span class="sp"></span><button class="p-icn" data-flash="brief">⤢</button></div>
+      <div class="p-body" id="brief-body"></div>
+    </section>
+    <section class="panel" id="comms">
+      <div class="p-head"><span class="p-code">C-03</span><span class="p-title">Comms Log</span><span class="sp"></span><button class="p-icn" id="comms-clear" title="ログを消去">⟲</button></div>
+      <div class="p-body" id="comms-body"><div class="comms-empty">JARVIS 待機中。下のコマンドバーで音声またはテキストで指示してください。</div></div>
+    </section>
+  </div>
+
+  <div class="center">
+    <section class="panel" id="matrix" style="height:100%;">
+      <div class="p-head"><span class="p-code">T-02</span><span class="p-title">Task Matrix</span><span class="sp"></span>
+        <button class="p-icn ok" id="mx-ack" title="確認済みにする">✓</button>
+        <button class="p-icn bad" id="mx-cancel" title="タスクを中止">✕</button>
+        <button class="p-icn" id="mx-info" title="詳細イベント">ⓘ</button>
+      </div>
+      <div class="p-body" style="padding:0;"><div class="matrix"><div class="mx-list" id="mx-list"></div><div class="mx-detail" id="mx-detail"></div></div></div>
+    </section>
+  </div>
+
+  <div class="col-right">
+    <section class="panel" id="artifacts">
+      <div class="p-head"><span class="p-code">A-04</span><span class="p-title">Artifacts</span><span class="sp"></span><button class="p-icn" data-flash="artifacts">⤢</button></div>
+      <div class="p-body" id="arti-body"></div>
+    </section>
+    <section class="panel" id="activity">
+      <div class="p-head"><span class="p-code">L-05</span><span class="p-title">Activity</span><span class="sp"></span></div>
+      <div class="p-body" id="act-body"></div>
+    </section>
+  </div>
+
+  <div class="dock">
+    <div class="reactor" id="reactor"><svg viewBox="0 0 64 64"><circle class="r-out" cx="32" cy="32" r="27"/><circle class="r-in" cx="32" cy="32" r="20"/><circle class="r-in" cx="32" cy="32" r="13" style="opacity:.3"/><circle class="r-core" cx="32" cy="32" r="7"/></svg></div>
+    <div class="dstat" id="dstat">待機中 · <b>音声/テキストで指示</b></div>
+    <div class="cmd">
+      <span class="live" id="live"></span>
+      <input id="cmd-input" placeholder="指示を入力… (Enter で送信)" />
+      <div id="queue-chips"></div>
+      <button class="iconbtn" id="mic" title="音声入力">◉</button>
+      <button class="iconbtn" id="send" title="送信">➤</button>
+    </div>
+  </div>
+</div>
+
+<script src="/cv-intent.js"></script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const browserSessionId = "bs-stark-" + Math.random().toString(36).slice(2, 10);
+let CFG = (window.CVIntent ? CVIntent.loadConfig() : { autoSendMs:2000 });
+
+/* ===================== data ===================== */
+let projects = [], tasksAll = [], activeProject = null, mode = "…", selectedTaskId = null, showEvents = false;
+const detailsCache = {};
+const ACK_KEY = "starkos-acked";
+const acked = new Set((()=>{ try{ return JSON.parse(localStorage.getItem(ACK_KEY)||"[]"); }catch(e){ return []; } })());
+const saveAcked = ()=>{ try{ localStorage.setItem(ACK_KEY, JSON.stringify([...acked])); }catch(e){} };
+
+const STATUS_JA = { queued:"待機", running:"進行中", succeeded:"完了", failed:"失敗", cancelled:"中止" };
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function deriveCode(name){ const p=String(name).split(/[^A-Za-z0-9]+/).filter(Boolean); return (p.length>=2?(p[0][0]+p[1][0]):String(name).replace(/[^A-Za-z0-9]/g,"").slice(0,2)).toUpperCase()||"··"; }
+function timeAgo(ts){ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000|0); if(s<60)return"今"; const m=s/60|0; if(m<60)return m+"分"; const h=m/60|0; if(h<24)return h+"時間"; return (h/24|0)+"日"; }
+function hhmm(ts){ if(!ts) return "--:--"; const d=new Date(ts); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+
+async function refreshData(){
+  try{
+    const [p,t] = await Promise.all([ fetch(`/api/projects?all=1&browserSessionId=${browserSessionId}`), fetch(`/api/tasks`) ]);
+    const pj = await p.json(), tj = await t.json();
+    activeProject = pj.active ?? activeProject;
+    tasksAll = Array.isArray(tj.tasks)? tj.tasks : [];
+    const withTasks = new Set(tasksAll.map(x=>x.project));
+    let names = [...withTasks];
+    if (activeProject && !names.includes(activeProject)) names.unshift(activeProject);
+    if (!names.length && Array.isArray(pj.projects)) names = pj.projects.slice(0,6).map(x=>x.name);
+    projects = names.map(name=>{
+      const ts = tasksAll.filter(x=>x.project===name);
+      return { name, code:deriveCode(name), tasks:ts,
+        running: ts.filter(x=>x.status==="running").length,
+        done: ts.filter(x=>x.status==="succeeded").length,
+        fail: ts.filter(x=>x.status==="failed" && !acked.has(x.id)).length, total: ts.length };
+    });
+    // ensure a selection
+    const shown = shownTasks();
+    if (!shown.find(x=>x.id===selectedTaskId)) selectedTaskId = shown[0]?.id ?? null;
+    renderCrumb(); renderBrief(); renderMatrix(); renderArtifacts(); renderActivity();
+  }catch(e){}
+}
+function shownTasks(){ return activeProject ? tasksAll.filter(t=>t.project===activeProject) : tasksAll; }
+function pctOf(t){ return t.status==="succeeded"?100 : t.status==="failed"?100 : t.status==="running"?60 : 0; }
+
+/* ===================== render ===================== */
+function renderCrumb(){
+  const p = projects.find(x=>x.name===activeProject) || projects[0];
+  $("#crumb-code").textContent = p ? p.code : "—";
+  $("#crumb-name").textContent = p ? p.name : "未選択";
+}
+function renderChips(){
+  const chips = [["P-01","brief"],["T-02","matrix"],["C-03","comms"],["A-04","artifacts"],["L-05","activity"]];
+  $("#chips").innerHTML = chips.map(([c,id])=>`<button class="chip" data-p="${id}">${c}</button>`).join("");
+  $("#chips").querySelectorAll(".chip").forEach(b=> b.addEventListener("click", ()=>{ const el=document.getElementById(b.dataset.p); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }));
+}
+function renderBrief(){
+  const b = $("#brief-body");
+  if (!projects.length){ b.innerHTML = `<div class="empty-min">プロジェクトはまだありません。話しかけて新規タスクを作成してください。</div>`; return; }
+  b.innerHTML = "";
+  projects.forEach(p=>{
+    const cls = p.fail>0?"fail":p.running>0?"run":p.done===p.total&&p.total>0?"done":"";
+    const el = document.createElement("button");
+    el.className = `mission ${cls} ${p.name===activeProject?"active":""}`;
+    el.innerHTML = `<span class="dot"></span><span class="mc">${p.code}</span><span class="mn">${esc(p.name)}</span><span class="cnt">${p.running?p.running+"実行":p.total+"件"}</span>`;
+    el.addEventListener("click", ()=> selectProject(p.name));
+    b.appendChild(el);
+  });
+}
+function renderMatrix(){
+  const list = $("#mx-list"), detail = $("#mx-detail");
+  const tasks = shownTasks().slice().sort((a,b)=> (statusRank(a)-statusRank(b)) || (b.startedAt-a.startedAt));
+  if (!tasks.length){ list.innerHTML = `<div class="empty-min">タスクなし</div>`; detail.innerHTML = `<div class="mx-empty">タスクがありません。<br>下のコマンドバーで「〇〇を実装して」等と指示すると、Claude Code がタスクを起動します。</div>`; return; }
+  list.innerHTML = "";
+  tasks.forEach(t=>{
+    const el = document.createElement("button");
+    el.className = `tk st-${t.status} ${t.id===selectedTaskId?"sel":""}`;
+    const pct = pctOf(t);
+    el.innerHTML = `<div class="row1"><span class="bullet">●</span><span class="ti">${esc(t.instruction)}</span>${t.priority==="urgent"?'<span class="urg">緊急</span>':""}<span class="pc">${t.status==="running"?"":pct+"%"}</span></div><div class="bar"><i style="width:${t.status==="running"?40:pct}%"></i></div>`;
+    el.addEventListener("click", ()=>{ selectedTaskId=t.id; renderMatrix(); void loadDetail(t.id); });
+    list.appendChild(el);
+  });
+  renderDetail(tasks.find(t=>t.id===selectedTaskId) || tasks[0], detail);
+}
+function statusRank(t){ return t.status==="running"?0 : t.status==="queued"?1 : t.status==="failed"?2 : 3; }
+function renderDetail(t, box){
+  if (!t){ box.innerHTML=""; return; }
+  const stcls = t.status==="succeeded"?"done":t.status==="failed"?"fail":"";
+  const desc = t.result || t.error || t.lastEvent || "（出力はまだありません）";
+  const det = detailsCache[t.id];
+  let checklist = "";
+  const events = det && Array.isArray(det.events) ? det.events.filter(e=>e.kind==="tool"||e.kind==="instruction") : [];
+  if (showEvents && events.length){
+    checklist = events.slice(-8).map(e=>`<div class="check on"><span class="box">✓</span><span class="txt">${esc(e.text)}</span></div>`).join("");
+  } else {
+    const on = t.status==="succeeded";
+    checklist = `<div class="check ${on?"on":""}"><span class="box">${on?"✓":""}</span><span class="txt">${esc(t.instruction)}</span></div>`;
+    if (t.branch) checklist += `<div class="check"><span class="box"></span><span class="txt">worktree: ${esc(t.branch)}</span></div>`;
+  }
+  const acts = [];
+  if (t.status==="running"){ acts.push(`<button class="act bad" data-a="cancel">■ 中止</button>`, `<button class="act" data-a="instruct">＋ 追加指示</button>`); }
+  else if (t.status==="queued"){ acts.push(`<button class="act bad" data-a="cancel">■ 取り下げ</button>`); }
+  if ((t.status==="succeeded"||t.status==="failed") && t.sessionId){ acts.push(`<button class="act ok" data-a="resume">↻ 引き継ぎ</button>`); }
+  box.innerHTML = `<div class="st ${stcls}">${STATUS_JA[t.status]||t.status}${t.priority==="urgent"?" · 緊急":""} · #${t.seq??""}</div>
+    <h2>${esc(t.instruction)}</h2>
+    <p class="desc">${esc(desc)}</p>
+    ${checklist}
+    <div class="acts">${acts.join("")}</div>
+    <div id="instruct-slot"></div>`;
+  box.querySelectorAll(".act").forEach(b=> b.addEventListener("click", ()=> taskAction(t, b.dataset.a)));
+}
+function renderArtifacts(){
+  const box = $("#arti-body");
+  const done = tasksAll.filter(t=>t.status==="succeeded").sort((a,b)=>(b.endedAt||0)-(a.endedAt||0)).slice(0,8);
+  if (!done.length){ box.innerHTML = `<div class="empty-min">成果物はまだありません。完了タスクの結果がここに並びます。</div>`; return; }
+  box.innerHTML = "";
+  done.forEach(t=>{
+    const ins = t.instruction||"";
+    const ic = /\.py|コード|スクリプト|実装|関数/.test(ins) ? "&lt;/&gt;" : /グラフ|チャート|可視化|図/.test(ins) ? "▤" : /メモ|ドキュメント|README|文書|レポート/.test(ins) ? "≡" : "◆";
+    const el = document.createElement("button");
+    el.className = "arti";
+    el.innerHTML = `<span class="ic">${ic}</span><span class="an">${esc(ins)}</span><span class="as">${t.branch?esc(t.branch):"#"+(t.seq??"")}</span>`;
+    el.addEventListener("click", ()=>{ if(t.project!==activeProject) selectProject(t.project); selectedTaskId=t.id; renderMatrix(); void loadDetail(t.id); $("#matrix").classList.add("flash"); });
+    box.appendChild(el);
+  });
+}
+function renderActivity(){
+  const box = $("#act-body");
+  const items = [];
+  tasksAll.forEach(t=>{
+    if (t.endedAt) items.push({ ts:t.endedAt, kind:t.status, task:t, review:(t.status==="succeeded"||t.status==="failed") && !acked.has(t.id) });
+    else if (t.status==="running") items.push({ ts:t.startedAt, kind:"running", task:t });
+    else if (t.status==="queued") items.push({ ts:t.startedAt, kind:"queued", task:t });
+  });
+  items.sort((a,b)=> (b.ts||0)-(a.ts||0));
+  if (!items.length){ box.innerHTML = `<div class="empty-min">アクティビティはまだありません。</div>`; return; }
+  box.innerHTML = "";
+  items.slice(0,14).forEach(it=>{
+    const t = it.task;
+    const label = it.review ? "承認待ち" : it.kind==="running"?"実行中":it.kind==="queued"?"待機":STATUS_JA[it.kind]||it.kind;
+    const cls = it.kind==="succeeded"?"ok":it.kind==="failed"?"fail":it.kind==="running"?"run":"";
+    const el = document.createElement("div");
+    el.className = `act-item ${cls} ${it.review?"review":""}`;
+    el.innerHTML = `<span class="tm">${hhmm(it.ts)}</span><span class="dot"></span><div class="ab"><div class="al">${label}</div><div class="at">${esc(t.instruction)}</div>${it.review?`<div class="approve"><button class="y" title="確認済み">✓</button><button class="n" title="却下">✕</button></div>`:""}</div>`;
+    el.querySelector(".at").addEventListener("click", ()=>{ if(t.project!==activeProject) selectProject(t.project); selectedTaskId=t.id; renderMatrix(); void loadDetail(t.id); });
+    if (it.review){ el.querySelector(".y").addEventListener("click",(e)=>{ e.stopPropagation(); acked.add(t.id); saveAcked(); renderActivity(); renderBrief(); }); el.querySelector(".n").addEventListener("click",(e)=>{ e.stopPropagation(); acked.add(t.id); saveAcked(); renderActivity(); renderBrief(); }); }
+    box.appendChild(el);
+  });
+}
+
+async function loadDetail(id){ try{ const r = await fetch(`/api/tasks/${id}`); const j = await r.json(); detailsCache[id] = { events:j.events||[], liveText:j.liveText||null }; if (selectedTaskId===id) renderMatrix(); }catch(e){} }
+
+/* ===================== actions ===================== */
+async function selectProject(name){
+  activeProject = name; selectedTaskId = null;
+  renderCrumb(); renderBrief();
+  try{ await fetch("/api/workspace",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({browserSessionId,project:name})}); }catch(e){}
+  refreshData();
+}
+async function taskAction(t, a){
+  if (a==="cancel"){ await fetch(`/api/tasks/${t.id}/cancel`,{method:"POST",headers:{"content-type":"application/json"}}).catch(()=>{}); refreshData(); }
+  else if (a==="resume"){ addComms("system", `⚙ タスク #${t.seq} を引き継いで追いタスクを開始`); try{ await fetch("/api/tasks",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({browserSessionId,resume:t.id,instruction:"前のタスクの続きをお願いします"})}); }catch(e){} refreshData(); }
+  else if (a==="instruct"){
+    const slot = $("#instruct-slot");
+    slot.innerHTML = `<div class="instruct"><input id="ins-in" placeholder="追加の指示を入力… (Enter)"><button class="act" id="ins-send">送信</button></div>`;
+    const inp = $("#ins-in"); inp.focus();
+    const go = async ()=>{ const v=inp.value.trim(); if(!v)return; await fetch(`/api/tasks/${t.id}/instructions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({text:v})}).catch(()=>{}); addComms("system",`⚙ タスク #${t.seq} に追加指示: ${v}`); slot.innerHTML=""; refreshData(); };
+    $("#ins-send").addEventListener("click", go);
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.isComposing){ e.preventDefault(); go(); } });
+  }
+}
+$("#mx-ack").addEventListener("click", ()=>{ const t=curTask(); if(t){ acked.add(t.id); saveAcked(); renderActivity(); renderBrief(); } });
+$("#mx-cancel").addEventListener("click", ()=>{ const t=curTask(); if(t && (t.status==="running"||t.status==="queued")) taskAction(t,"cancel"); });
+$("#mx-info").addEventListener("click", ()=>{ showEvents=!showEvents; $("#mx-info").classList.toggle("on",showEvents); const t=curTask(); if(t) void loadDetail(t.id); renderMatrix(); });
+function curTask(){ return tasksAll.find(t=>t.id===selectedTaskId); }
+document.querySelectorAll("[data-flash]").forEach(b=> b.addEventListener("click", ()=>{ const el=document.getElementById(b.dataset.flash); el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }));
+
+/* ===================== comms / chat ===================== */
+const commsBody = $("#comms-body");
+let ttsOn = true;
+function addComms(role, text){
+  const e = commsBody.querySelector(".comms-empty"); if(e) e.remove();
+  const who = role==="user" ? `<span class="who">OPERATOR</span>` : role==="system" ? `<span class="who">SYSTEM</span>` : role==="interjection" ? `<span class="who">JARVIS · 割り込み</span>` : `<span class="who">JARVIS</span>`;
+  const div = document.createElement("div"); div.className = "msg "+role;
+  div.innerHTML = who + `<div class="tx"></div>`;
+  div.querySelector(".tx").textContent = text;
+  commsBody.appendChild(div); commsBody.scrollTop = commsBody.scrollHeight;
+  return div.querySelector(".tx");
+}
+$("#comms-clear").addEventListener("click", ()=>{ commsBody.innerHTML = `<div class="comms-empty">JARVIS 待機中。</div>`; });
+
+let activeChatAbort = null;
+function interruptChat(){ if (activeChatAbort) activeChatAbort.abort(); }
+async function sendMessage(message){
+  const clean = String(message).trim(); if(!clean) return;
+  interruptChat(); const controller = new AbortController(); activeChatAbort = controller;
+  addComms("user", clean);
+  const body = addComms("assistant", "…"); let first=true, finalText="";
+  setDock("処理中…", true);
+  try{
+    const res = await fetch("/api/chat",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({browserSessionId,message:clean}),signal:controller.signal});
+    if(!res.ok||!res.body) throw new Error("HTTP "+res.status);
+    const rd = res.body.getReader(); const dec=new TextDecoder(); let buf="";
+    for(;;){ const {done,value}=await rd.read(); if(done)break; buf+=dec.decode(value,{stream:true});
+      const blocks=buf.split("\n\n"); buf=blocks.pop()??"";
+      for(const bl of blocks){ const ev=/^event: (.*)$/m.exec(bl)?.[1], dr=/^data: (.*)$/m.exec(bl)?.[1]; if(!ev||dr===undefined)continue; let d; try{d=JSON.parse(dr);}catch{continue;}
+        if(ev==="delta"){ if(first){body.textContent="";first=false;} body.textContent+=d.text; commsBody.scrollTop=commsBody.scrollHeight; }
+        else if(ev==="directive"){ if(d.detail) addComms("system",(d.ok?"⚙ ":"⚠ ")+d.detail); refreshData(); }
+        else if(ev==="done"){ finalText=d.text||body.textContent; body.textContent=finalText; }
+        else if(ev==="error"){ body.textContent="エラー: "+(d.message||""); }
+      }
+    }
+    if(finalText) speak(finalText);
+    refreshData();
+  }catch(err){ if(!controller.signal.aborted) body.textContent="接続エラー: "+(err&&err.message||err); }
+  finally{ if(activeChatAbort===controller){ activeChatAbort=null; setDock(listening?"受信中…":"待機中 · 音声/テキストで指示", listening); } }
+}
+
+/* dispatch queue (urgent interrupts) */
+let queue=[], pumping=false, qid=0;
+const isUrgent = t => window.CVIntent ? CVIntent.classify(t,CFG,projects.map(p=>p.name)).urgency==="urgent" : false;
+function renderQ(){ $("#queue-chips").innerHTML = queue.map(q=>`<span class="qc ${q.u?"urg":""}">${esc(q.text.slice(0,14))}</span>`).join(""); }
+function enqueue(text){ syncView(text); const it={id:++qid,text,u:isUrgent(text)}; if(it.u){ const i=queue.findIndex(q=>!q.u); i===-1?queue.push(it):queue.splice(i,0,it); interruptChat(); } else queue.push(it); renderQ(); pump(); }
+async function pump(){ if(pumping)return; pumping=true; try{ while(queue.length){ const it=queue.shift(); renderQ(); await sendMessage(it.text); } } finally{ pumping=false; } }
+/* utterance → view sync (task/project focus via CVIntent) */
+function syncView(text){
+  if(!window.CVIntent) return;
+  const v = CVIntent.classify(text, CFG, projects.map(p=>p.name)).view;
+  if(v.action==="task"){ const t=tasksAll.find(x=>Number(x.seq)===Number(v.seq)); if(t){ if(t.project!==activeProject) selectProject(t.project); selectedTaskId=t.id; renderMatrix(); void loadDetail(t.id); $("#matrix").classList.add("flash"); } }
+  else if(v.action==="project"){ selectProject(v.project); }
+}
+
+/* ===================== command bar (text + voice) ===================== */
+const cmdInput=$("#cmd-input"), sendBtn=$("#send"), micBtn=$("#mic"), liveEl=$("#live"), reactor=$("#reactor");
+function setDock(txt, live){ $("#dstat").innerHTML = txt.includes("·")? txt : `<b>${txt}</b>`; reactor.classList.toggle("live", !!live); }
+function submitText(){ const v=cmdInput.value.trim(); if(!v)return; speechSynthesis.cancel(); enqueue(v); cmdInput.value=""; }
+sendBtn.addEventListener("click", submitText);
+cmdInput.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.isComposing){ e.preventDefault(); submitText(); } });
+
+/* TTS */
+function clip(t){ const s=String(t); if(s.length<=220)return s; const c=s.slice(0,220), p=Math.max(c.lastIndexOf("。"),c.lastIndexOf("."),c.lastIndexOf("\n")); return (p>60?c.slice(0,p+1):c)+" 以下略"; }
+function speak(t){ if(!ttsOn||!("speechSynthesis"in window))return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(clip(t)); u.lang="ja-JP"; u.rate=1.2; speechSynthesis.speak(u); }catch(e){} }
+
+/* Web Speech */
+const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+let rec=null, listening=false, draftSpeech="", silence=null;
+function detectSend(text){ if(window.CVIntent){ const s=CVIntent.classify(text,CFG).send; return s.triggered?s.body:null; } const m=/(.*?)(?:、|。|\s)?(送信|そうしん)$/.exec(text.trim()); return m&&m[1].trim()?m[1].trim():null; }
+function setLive(){ liveEl.textContent = draftSpeech + curInterim; }
+let curInterim="";
+function arm(){ if(silence)clearTimeout(silence); if(draftSpeech.trim()) silence=setTimeout(flush, CFG.autoSendMs||2000); }
+function flush(){ const t=draftSpeech.trim(); draftSpeech=""; curInterim=""; if(silence){clearTimeout(silence);silence=null;} setLive(); if(t) enqueue(t); }
+function startRec(){
+  if(!SR){ addComms("system","⚠ このブラウザは音声認識非対応です（Chrome推奨）"); return; }
+  rec=new SR(); rec.lang="ja-JP"; rec.continuous=true; rec.interimResults=true;
+  rec.onresult=e=>{ let interim="",finals=""; for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; r.isFinal?finals+=r[0].transcript:interim+=r[0].transcript; }
+    if(speechSynthesis.speaking && finals.trim()) speechSynthesis.cancel();
+    if(finals){ draftSpeech=(draftSpeech+finals).trim(); } curInterim=interim; setLive();
+    const cmd=detectSend(draftSpeech+interim); if(cmd){ if(silence)clearTimeout(silence); draftSpeech=cmd; flush(); return; }
+    if(finals) arm();
+  };
+  rec.onend=()=>{ if(listening){ try{rec.start();}catch(e){} } };
+  try{ rec.start(); listening=true; micBtn.classList.add("on"); micBtn.textContent="■"; setDock("受信中…", true); }catch(e){}
+}
+function stopRec(){ listening=false; if(rec){try{rec.stop();}catch(e){}} micBtn.classList.remove("on"); micBtn.textContent="◉"; setDock("待機中 · 音声/テキストで指示", false); }
+micBtn.addEventListener("click", ()=> listening?stopRec():startRec());
+
+/* ===================== clock + boot ===================== */
+function tick(){ const d=new Date(); $("#clock").textContent = String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+(async function init(){
+  renderChips(); tick(); setInterval(tick, 15000);
+  try{ const h=await(await fetch("/api/health")).json(); mode=h.mode||"?"; }catch(e){ mode="offline"; }
+  $("#mode").textContent = mode==="cli"?"◇ CLAUDE CODE 接続":mode==="mock"?"◇ MOCK":"◇ "+mode;
+  await refreshData();
+  setInterval(refreshData, 3000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='6' width='20' height='20' rx='7' fill='none' stroke='%23a9c4ff' stroke-width='2.4'/%3E%3C/svg%3E" />
+<title>claude-voice — Vision Workspace</title>
+<style>
+/* ============================================================
+   VISION WORKSPACE — visionOS風の空間ワークスペース
+   すりガラスのウィンドウが空間に浮かび、視線(ポインタ)に応じて
+   わずかに向きを変える。操作はホバーで淡く発光し、手前へ持ち上がる。
+   ============================================================ */
+:root{
+  --ink: rgba(255,255,255,.96);
+  --ink-2: rgba(255,255,255,.60);
+  --ink-3: rgba(255,255,255,.36);
+  --glass: rgba(255,255,255,.065);
+  --glass-2: rgba(255,255,255,.11);
+  --stroke: rgba(255,255,255,.14);
+  --stroke-2: rgba(255,255,255,.30);
+  --blue: #9cc0ff;
+  --blue-fill: #0a84ff;
+  --green: #30d158;
+  --red: #ff6961;
+  --amber: #ffd60a;
+  --r-win: 30px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+*{box-sizing:border-box; margin:0;}
+html,body{height:100%;}
+body{background:#04050a; color:var(--ink); font-family:var(--font); overflow:hidden; -webkit-font-smoothing:antialiased;}
+button,input{font:inherit; color:inherit;}
+button{cursor:pointer; background:none; border:none; padding:0;}
+::selection{background:rgba(10,132,255,.35);}
+
+/* ---- 環境: 深い空間とゆっくり漂う光 ---- */
+#env{position:fixed; inset:0; z-index:0; overflow:hidden;
+  background:
+    radial-gradient(ellipse 1100px 700px at 18% -12%, rgba(84,110,255,.13), transparent 60%),
+    radial-gradient(ellipse 900px 640px at 86% 8%, rgba(168,110,255,.10), transparent 60%),
+    radial-gradient(ellipse 1300px 500px at 50% 118%, rgba(255,168,110,.07), transparent 65%),
+    linear-gradient(180deg, #070910, #04050a 70%);}
+.mote{position:absolute; border-radius:50%; filter:blur(70px); opacity:.5; will-change:transform;}
+.mote.m1{width:420px;height:420px;left:6%;top:12%;background:rgba(90,130,255,.16); animation:drift1 34s ease-in-out infinite;}
+.mote.m2{width:340px;height:340px;right:8%;top:28%;background:rgba(180,120,255,.13); animation:drift2 41s ease-in-out infinite;}
+.mote.m3{width:480px;height:480px;left:38%;bottom:-16%;background:rgba(80,160,255,.10); animation:drift3 47s ease-in-out infinite;}
+@keyframes drift1{50%{transform:translate(70px,44px);}}
+@keyframes drift2{50%{transform:translate(-56px,60px);}}
+@keyframes drift3{50%{transform:translate(48px,-52px);}}
+
+/* ---- 空間ステージ ---- */
+/* 重要: #stage/#space/.slot は pointer-events:none。3D空間では奥(-Z)にある
+   ウィンドウより透明な親プレーンが手前になり、クリックを全て遮ってしまうため。
+   受けるのはウィンドウ自身だけにする。 */
+#stage{position:fixed; inset:0; z-index:1; perspective:1900px; pointer-events:none;
+  perspective-origin:calc(50% + var(--px,0)*4%) calc(46% + var(--py,0)*4%);}
+#space{position:absolute; inset:0; transform-style:preserve-3d; pointer-events:none;
+  transform:rotateX(calc(var(--py,0)*-1.1deg)) rotateY(calc(var(--px,0)*1.4deg));
+  transition:transform .55s cubic-bezier(.2,.7,.3,1);
+  display:grid; grid-template-columns:296px minmax(480px,1fr) 396px; gap:26px;
+  padding:72px 88px 148px 108px; align-items:stretch;}
+.slot{transform-style:preserve-3d; min-height:0; display:flex; pointer-events:none;}
+.window{pointer-events:auto;}
+.slot-l{transform:rotateY(9deg) translateZ(-36px);}
+.slot-c{transform:translateZ(14px);}
+.slot-r{transform:rotateY(-9deg) translateZ(-36px);}
+
+/* ---- ウィンドウ: visionOSガラス ---- */
+.window{position:relative; flex:1; min-height:0; display:flex; flex-direction:column;
+  border-radius:var(--r-win);
+  background:linear-gradient(rgba(255,255,255,.085), rgba(255,255,255,.045));
+  -webkit-backdrop-filter:blur(46px) saturate(170%); backdrop-filter:blur(46px) saturate(170%);
+  border:1px solid var(--stroke);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.04),
+    0 54px 110px -22px rgba(0,0,0,.62);
+  transform:translateZ(0);
+  transition:transform .5s cubic-bezier(.2,.7,.3,1), box-shadow .5s ease, opacity .35s ease, scale .35s ease;
+  animation:win-enter .8s cubic-bezier(.2,.7,.3,1) both;}
+.slot-l .window{animation-delay:.05s;} .slot-c .window{animation-delay:.14s;} .slot-r .window{animation-delay:.23s;}
+@keyframes win-enter{from{opacity:0; translate:0 26px; scale:.94; filter:blur(10px);} to{opacity:1; translate:0 0; scale:1; filter:blur(0);}}
+/* ホバーは発光のみ(位置は動かさない: クリック中に対象がズレて押せなくなるため) */
+.window:hover{border-color:rgba(255,255,255,.24);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(255,255,255,.05),
+    0 64px 130px -24px rgba(0,0,0,.68);}
+.window.flash{box-shadow:inset 0 1px 0 rgba(255,255,255,.28), 0 0 0 1.5px rgba(156,192,255,.75), 0 0 56px rgba(120,160,255,.45), 0 54px 110px -22px rgba(0,0,0,.62);
+  transition:box-shadow .2s;}
+.window.hidden{opacity:0; scale:.9; pointer-events:none;}
+/* ウィンドウバー(下のつまみ)と閉じる */
+.winbar{position:absolute; left:50%; bottom:-17px; transform:translateX(-50%); display:flex; align-items:center; gap:10px;}
+.winbar .grab{width:92px; height:5px; border-radius:3px; background:rgba(255,255,255,.34);}
+.winbar .close{width:13px; height:13px; border-radius:50%; background:rgba(255,255,255,.22); transition:background .2s;}
+.winbar .close:hover{background:rgba(255,255,255,.6);}
+
+.w-head{display:flex; align-items:center; gap:10px; padding:17px 22px 13px; flex:none;}
+.w-title{font-size:15px; font-weight:600; letter-spacing:.01em;}
+.w-sub{font-size:12px; color:var(--ink-3);}
+.w-head .sp{flex:1;}
+.w-body{flex:1; min-height:0; overflow-y:auto; padding:4px 14px 18px; overscroll-behavior:contain;}
+.w-body::-webkit-scrollbar{width:6px;}
+.w-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16); border-radius:3px;}
+
+/* 丸いガラスボタン */
+.gbtn{width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:var(--glass); border:1px solid var(--stroke); color:var(--ink-2);
+  transition:background .25s, color .25s, transform .25s;}
+.gbtn:hover{background:var(--glass-2); color:var(--ink); transform:scale(1.06);}
+.gbtn.on{background:rgba(255,255,255,.92); color:#111; border-color:transparent;}
+.gbtn svg{width:15px; height:15px;}
+
+/* ---- プロジェクト ---- */
+.proj{display:flex; align-items:center; gap:11px; width:100%; text-align:left; padding:12px 13px;
+  border-radius:16px; color:var(--ink-2); transition:background .25s, color .25s;}
+.proj:hover{background:var(--glass-2); color:var(--ink);}
+.proj.active{background:rgba(255,255,255,.13); color:var(--ink);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18);}
+.proj .dot{width:8px; height:8px; border-radius:50%; background:var(--ink-3); flex:none;}
+.proj.run .dot{background:var(--blue); box-shadow:0 0 9px var(--blue); animation:soft-pulse 1.8s infinite;}
+.proj.fail .dot{background:var(--red); box-shadow:0 0 9px var(--red);}
+.proj.done .dot{background:var(--green);}
+@keyframes soft-pulse{50%{opacity:.45;}}
+.proj .nm{flex:1; min-width:0; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.proj .ct{font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums;}
+.proj.active .ct{color:var(--ink-2);}
+
+/* ---- 会話 ---- */
+.chat-empty{margin:auto; text-align:center; color:var(--ink-3); font-size:13px; line-height:2; padding:24px; max-width:320px;}
+.chat-empty b{color:var(--ink-2); font-weight:600; font-size:14.5px; display:block; margin-bottom:6px;}
+#chat-body{display:flex; flex-direction:column; gap:12px; padding:6px 20px 20px;}
+.msg{max-width:86%; padding:11px 15px; border-radius:20px; font-size:13.5px; line-height:1.75;
+  white-space:pre-wrap; word-break:break-word; animation:msg-in .45s cubic-bezier(.2,.7,.3,1) both;}
+@keyframes msg-in{from{opacity:0; translate:0 12px; scale:.97;} to{opacity:1; translate:0 0; scale:1;}}
+.msg.user{align-self:flex-end; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.14);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2); border-bottom-right-radius:8px;}
+.msg.assistant{align-self:flex-start; background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.09);
+  border-bottom-left-radius:8px;}
+.msg.system{align-self:center; background:none; border:none; color:var(--ink-3); font-size:11.5px; padding:2px 8px; text-align:center;}
+.msg.interjection{align-self:flex-start; background:rgba(255,214,10,.09); border:1px dashed rgba(255,214,10,.35); font-size:12.5px;}
+
+/* ---- タスク ---- */
+.seg{display:flex; gap:3px; background:rgba(0,0,0,.25); border-radius:999px; padding:3px; border:1px solid rgba(255,255,255,.07);}
+.seg button{font-size:11.5px; padding:5px 13px; border-radius:999px; color:var(--ink-3); transition:background .3s, color .3s;}
+.seg button.on{background:rgba(255,255,255,.88); color:#111; font-weight:600;}
+.task{display:block; width:100%; text-align:left; border-radius:18px; padding:13px 15px; margin:0 0 9px;
+  background:var(--glass); border:1px solid rgba(255,255,255,.09); cursor:pointer;
+  transition:background .25s, border-color .25s; position:relative; overflow:hidden;}
+.task:hover{background:var(--glass-2);}
+.task.sel{background:rgba(255,255,255,.12); border-color:var(--stroke-2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18);}
+.task .top{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+.cap{font-size:10px; font-weight:600; letter-spacing:.03em; padding:2.5px 9px; border-radius:999px;}
+.cap.running{color:#bcd7ff; background:rgba(10,132,255,.22); animation:soft-pulse 1.8s infinite;}
+.cap.queued{color:var(--ink-2); background:rgba(255,255,255,.1);}
+.cap.succeeded{color:#9ef0b4; background:rgba(48,209,88,.16);}
+.cap.failed{color:#ffb3ad; background:rgba(255,105,97,.18);}
+.cap.cancelled{color:var(--ink-3); background:rgba(255,255,255,.07);}
+.cap.urgent{color:#3a2c00; background:var(--amber);}
+.task .seq{font-family:var(--mono); font-size:10px; color:var(--ink-3); margin-left:auto;}
+.task .ti{font-size:13px; line-height:1.55; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--ink);}
+.task.sel .ti{-webkit-line-clamp:unset;}
+.task .meta{margin-top:6px; font-size:11px; color:var(--ink-3);}
+.task .runbar{position:absolute; left:0; right:0; bottom:0; height:2px; overflow:hidden; border-radius:2px;}
+.task .runbar i{display:block; height:100%; width:34%; border-radius:2px; background:linear-gradient(90deg, transparent, var(--blue-fill), transparent);
+  animation:runslide 1.7s ease-in-out infinite;}
+@keyframes runslide{0%{margin-left:-34%;} 100%{margin-left:100%;}}
+.t-detail{margin-top:11px; padding-top:11px; border-top:1px solid rgba(255,255,255,.1);}
+.t-out{font-size:12.5px; line-height:1.7; color:var(--ink-2); white-space:pre-wrap; word-break:break-word;
+  max-height:170px; overflow-y:auto;}
+.t-out::-webkit-scrollbar{width:5px;} .t-out::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15); border-radius:3px;}
+.t-tools{margin-top:9px; display:flex; flex-direction:column; gap:3px;}
+.t-tools span{font-family:var(--mono); font-size:10px; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.t-acts{display:flex; gap:8px; margin-top:11px; flex-wrap:wrap;}
+.pill-btn{font-size:11.5px; font-weight:600; padding:7px 14px; border-radius:999px;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.14); color:var(--ink);
+  transition:background .25s, transform .2s;}
+.pill-btn:hover{background:rgba(255,255,255,.18); transform:scale(1.04);}
+.pill-btn.danger{color:#ffb3ad;}
+.pill-btn.go{background:rgba(10,132,255,.85); border-color:transparent; color:#fff;}
+.pill-btn.go:hover{background:var(--blue-fill);}
+.t-form{display:flex; gap:7px; margin-top:10px;}
+.t-form input{flex:1; min-width:0; background:rgba(0,0,0,.3); border:1px solid var(--stroke); border-radius:12px;
+  padding:8px 12px; font-size:12.5px; outline:none; color:var(--ink);}
+.t-form input:focus{border-color:rgba(156,192,255,.6);}
+.list-empty{color:var(--ink-3); font-size:12.5px; text-align:center; padding:30px 12px; line-height:1.9;}
+
+/* ---- アクティビティ ---- */
+.evt{display:flex; gap:11px; padding:11px 12px; border-radius:14px; transition:background .25s;}
+.evt:hover{background:var(--glass);}
+.evt .tm{font-family:var(--mono); font-size:10px; color:var(--ink-3); flex:none; padding-top:3px; width:36px;}
+.evt .dot{width:7px; height:7px; border-radius:50%; background:var(--ink-3); flex:none; margin-top:6px;}
+.evt.ok .dot{background:var(--green);} .evt.fail .dot{background:var(--red);}
+.evt.run .dot{background:var(--blue); box-shadow:0 0 8px var(--blue);}
+.evt .bx{flex:1; min-width:0;}
+.evt .lb{font-size:10px; font-weight:600; letter-spacing:.05em; color:var(--ink-3); text-transform:uppercase;}
+.evt.review .lb{color:var(--amber);}
+.evt .tx{font-size:12.5px; line-height:1.6; margin-top:2px; overflow-wrap:anywhere; cursor:pointer;}
+.evt .ap{display:flex; gap:7px; margin-top:7px;}
+.evt .ap button{width:30px; height:24px; border-radius:8px; font-size:12px;
+  background:rgba(255,255,255,.09); border:1px solid rgba(255,255,255,.12);}
+.evt .ap .y{color:var(--green);} .evt .ap .n{color:var(--red);}
+.evt .ap button:hover{background:rgba(255,255,255,.18);}
+
+/* ---- タブオーナメント(左) ---- */
+#tabbar{position:fixed; left:22px; top:50%; transform:translateY(-50%); z-index:5;
+  display:flex; flex-direction:column; gap:6px; padding:9px 7px; border-radius:26px;
+  background:rgba(255,255,255,.07); -webkit-backdrop-filter:blur(40px) saturate(170%); backdrop-filter:blur(40px) saturate(170%);
+  border:1px solid var(--stroke); box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 24px 60px rgba(0,0,0,.5);
+  animation:orn-in .8s .35s cubic-bezier(.2,.7,.3,1) both;}
+@keyframes orn-in{from{opacity:0; translate:-16px 0;} to{opacity:1; translate:0 0;}}
+#tabbar .tb{width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  color:var(--ink-3); transition:background .25s, color .25s, transform .25s;}
+#tabbar .tb:hover{background:rgba(255,255,255,.12); color:var(--ink); transform:scale(1.1);}
+#tabbar .tb.on{background:rgba(255,255,255,.9); color:#111;}
+#tabbar .tb svg{width:17px; height:17px;}
+#tabbar .sep{height:1px; margin:3px 8px; background:rgba(255,255,255,.14);}
+
+/* ---- タイムピル(上) ---- */
+#timepill{position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:5;
+  display:flex; align-items:center; gap:10px; padding:7px 16px; border-radius:999px;
+  background:rgba(255,255,255,.07); -webkit-backdrop-filter:blur(36px) saturate(160%); backdrop-filter:blur(36px) saturate(160%);
+  border:1px solid var(--stroke); box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 16px 44px rgba(0,0,0,.4);
+  font-size:12px; color:var(--ink-2); animation:orn-in .7s .3s cubic-bezier(.2,.7,.3,1) both;}
+#timepill .clock{font-variant-numeric:tabular-nums; color:var(--ink); font-weight:600;}
+#timepill .mode{display:flex; align-items:center; gap:6px;}
+#timepill .mode .led{width:6px; height:6px; border-radius:50%; background:var(--ink-3);}
+#timepill .mode.cli .led{background:var(--green); box-shadow:0 0 7px var(--green);}
+
+/* ---- コントロールオーナメント(下・音声/入力) ---- */
+#ornament{position:fixed; left:50%; bottom:26px; transform:translateX(-50%); z-index:6;
+  width:min(720px, calc(100vw - 48px));
+  display:flex; align-items:center; gap:12px; padding:10px 12px 10px 10px; border-radius:999px;
+  background:rgba(255,255,255,.09); -webkit-backdrop-filter:blur(46px) saturate(180%); backdrop-filter:blur(46px) saturate(180%);
+  border:1px solid rgba(255,255,255,.17);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.26), 0 34px 80px rgba(0,0,0,.55);
+  animation:orn-up .8s .4s cubic-bezier(.2,.7,.3,1) both;}
+@keyframes orn-up{from{opacity:0; translate:0 22px; scale:.95;} to{opacity:1; translate:0 0; scale:1;}}
+#mic{width:46px; height:46px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.16); color:var(--ink);
+  transition:background .3s, color .3s, transform .25s;}
+#mic:hover{transform:scale(1.07);}
+#mic svg{width:19px; height:19px;}
+#mic.on{background:#fff; color:#0a0a0c; animation:mic-ring 1.9s ease-out infinite;}
+@keyframes mic-ring{0%{box-shadow:0 0 0 0 rgba(255,255,255,.45);} 100%{box-shadow:0 0 0 16px rgba(255,255,255,0);}}
+#cmd{flex:1; min-width:0; background:none; border:none; outline:none; font-size:14.5px; color:var(--ink); padding:8px 2px;}
+#cmd::placeholder{color:var(--ink-3);}
+#qchips{display:flex; gap:5px; flex:none; max-width:180px; overflow:hidden;}
+.qc{font-size:10px; padding:3px 9px; border-radius:999px; background:rgba(255,255,255,.1); color:var(--ink-2);
+  border:1px solid rgba(255,255,255,.1); max-width:86px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:none;}
+.qc.urg{background:rgba(255,214,10,.2); color:#ffe480; border-color:rgba(255,214,10,.35);}
+#sendbtn{width:40px; height:40px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+  background:var(--blue-fill); color:#fff; transition:opacity .25s, transform .25s;}
+#sendbtn:disabled{opacity:.3;}
+#sendbtn:not(:disabled):hover{transform:scale(1.08);}
+#sendbtn svg{width:17px; height:17px;}
+#interim{position:fixed; left:50%; bottom:92px; transform:translateX(-50%); z-index:5; max-width:640px;
+  font-size:12.5px; color:var(--ink-2); background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.1);
+  padding:6px 16px; border-radius:999px; -webkit-backdrop-filter:blur(20px); backdrop-filter:blur(20px);
+  opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+#interim.show{opacity:1;}
+
+@media (max-width:1120px){
+  #stage{perspective:none; overflow-y:auto; position:static; height:100vh;}
+  #space{transform:none; display:flex; flex-direction:column; padding:70px 18px 150px; overflow-y:auto;}
+  .slot-l,.slot-c,.slot-r{transform:none;}
+  .window{min-height:300px;}
+  #tabbar{display:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important; transition:none !important;}
+}
+</style>
+</head>
+<body>
+<div id="env"><div class="mote m1"></div><div class="mote m2"></div><div class="mote m3"></div></div>
+
+<div id="timepill"><span class="clock" id="clock">--:--</span><span class="mode" id="modewrap"><span class="led"></span><span id="mode">接続中…</span></span></div>
+
+<nav id="tabbar" aria-label="ウィンドウ">
+  <button class="tb on" data-win="projects" title="プロジェクト"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3.5" y="3.5" width="7.2" height="7.2" rx="2.4"/><rect x="13.3" y="3.5" width="7.2" height="7.2" rx="2.4"/><rect x="3.5" y="13.3" width="7.2" height="7.2" rx="2.4"/><rect x="13.3" y="13.3" width="7.2" height="7.2" rx="2.4"/></svg></button>
+  <button class="tb on" data-win="chat" title="会話"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 7a3.5 3.5 0 0 1 3.5-3.5h9A3.5 3.5 0 0 1 20 7v6a3.5 3.5 0 0 1-3.5 3.5H10l-5 4v-4A3.5 3.5 0 0 1 4 13V7z"/></svg></button>
+  <button class="tb on" data-win="tasks" title="タスク"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-4.9"/></svg></button>
+  <div class="sep"></div>
+  <a class="tb" href="/calibrate.html" target="_blank" title="キャリブレーション"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.2"/><circle cx="8" cy="16" r="2.2"/></svg></a>
+</nav>
+
+<div id="stage"><div id="space">
+  <div class="slot slot-l"><section class="window" id="win-projects">
+    <div class="w-head"><span class="w-title">プロジェクト</span><span class="w-sub" id="proj-count"></span><span class="sp"></span></div>
+    <div class="w-body" id="proj-body"></div>
+    <div class="winbar"><button class="close" data-close="projects" title="閉じる"></button><span class="grab"></span></div>
+  </section></div>
+
+  <div class="slot slot-c"><section class="window" id="win-chat">
+    <div class="w-head"><span class="w-title">アシスタント</span><span class="w-sub" id="chat-sub">Claude Code</span><span class="sp"></span>
+      <button class="gbtn on" id="tts-btn" title="読み上げ オン/オフ"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 9.5v5h3.2L12 18.6V5.4L7.2 9.5H4z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M15.5 9.2a4 4 0 0 1 0 5.6M18 6.8a7.4 7.4 0 0 1 0 10.4"/></svg></button>
+    </div>
+    <div class="w-body" id="chat-body">
+      <div class="chat-empty" id="chat-empty"><b>話しかけてください</b>マイクを押すか下の入力欄へ。「◯◯のテストを回して」「タスク2を見せて」— 会話だけでプロジェクト選択から実装タスクの実行まで進みます。</div>
+    </div>
+    <div class="winbar"><button class="close" data-close="chat" title="閉じる"></button><span class="grab"></span></div>
+  </section></div>
+
+  <div class="slot slot-r"><section class="window" id="win-tasks">
+    <div class="w-head"><span class="w-title">タスク</span><span class="sp"></span>
+      <div class="seg" role="tablist"><button class="on" data-seg="tasks">一覧</button><button data-seg="activity">アクティビティ</button></div>
+    </div>
+    <div class="w-body" id="tasks-body"></div>
+    <div class="winbar"><button class="close" data-close="tasks" title="閉じる"></button><span class="grab"></span></div>
+  </section></div>
+</div></div>
+
+<div id="interim"></div>
+<div id="ornament">
+  <button id="mic" title="音声入力の開始/停止"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M6.2 11.2a5.8 5.8 0 0 0 11.6 0M12 17.4V21"/></svg></button>
+  <input id="cmd" placeholder="話しかけるか、入力… (Enterで送信)" autocomplete="off" />
+  <div id="qchips"></div>
+  <button id="sendbtn" disabled title="送信"><svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 19.5v-14M6 11l6-5.7L18 11"/></svg></button>
+</div>
+
+<script src="/cv-intent.js"></script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const browserSessionId = "bs-vision-" + Math.random().toString(36).slice(2, 10);
+let CFG = window.CVIntent ? CVIntent.loadConfig() : { autoSendMs: 2000 };
+window.addEventListener("storage", e => { if (window.CVIntent && e.key === CVIntent.STORAGE_KEY) CFG = CVIntent.loadConfig(); });
+
+/* ============ state ============ */
+let projects = [], tasksAll = [], activeProject = null, selectedTaskId = null, seg = "tasks";
+const detailsCache = {};
+const acked = new Set((() => { try { return JSON.parse(localStorage.getItem("vision-acked") || "[]"); } catch { return []; } })());
+const saveAcked = () => { try { localStorage.setItem("vision-acked", JSON.stringify([...acked])); } catch {} };
+const STATUS_JA = { queued: "待機", running: "実行中", succeeded: "完了", failed: "失敗", cancelled: "中止" };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const timeAgo = ts => { if (!ts) return ""; const s = (Date.now() - ts) / 1000 | 0; if (s < 60) return "たった今"; const m = s / 60 | 0; if (m < 60) return m + "分前"; const h = m / 60 | 0; if (h < 24) return h + "時間前"; return (h / 24 | 0) + "日前"; };
+const hhmm = ts => { const d = new Date(ts || Date.now()); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+function flash(id){ const el = document.getElementById(id); if (!el) return; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 900); }
+
+/* ============ data ============ */
+async function refreshData(){
+  try{
+    const [pr, tr] = await Promise.all([
+      fetch(`/api/projects?all=1&browserSessionId=${browserSessionId}`),
+      fetch("/api/tasks"),
+    ]);
+    const pj = await pr.json(), tj = await tr.json();
+    activeProject = pj.active ?? activeProject;
+    tasksAll = Array.isArray(tj.tasks) ? tj.tasks : [];
+    const withTasks = [...new Set(tasksAll.map(t => t.project))];
+    let names = withTasks.slice();
+    if (activeProject && !names.includes(activeProject)) names.unshift(activeProject);
+    if (Array.isArray(pj.projects)) for (const p of pj.projects){ if (names.length >= 8) break; if (!names.includes(p.name)) names.push(p.name); }
+    projects = names.map(name => {
+      const ts = tasksAll.filter(t => t.project === name);
+      return { name, tasks: ts,
+        running: ts.filter(t => t.status === "running" || t.status === "queued").length,
+        done: ts.filter(t => t.status === "succeeded").length,
+        fail: ts.filter(t => t.status === "failed" && !acked.has(t.id)).length,
+        total: ts.length };
+    });
+    if (selectedTaskId && !tasksAll.find(t => t.id === selectedTaskId)) selectedTaskId = null;
+    renderProjects(); renderTasksWin();
+    const sel = tasksAll.find(t => t.id === selectedTaskId);
+    if (sel && sel.status === "running") void loadDetail(sel.id);
+  }catch{}
+}
+async function loadDetail(id){
+  try{ const r = await fetch(`/api/tasks/${id}`); const j = await r.json();
+    detailsCache[id] = { events: j.events || [], liveText: j.liveText || null };
+    if (selectedTaskId === id) renderTasksWin();
+  }catch{}
+}
+
+/* ============ render: projects ============ */
+let projSig = "";
+function renderProjects(){
+  const body = $("#proj-body");
+  // 変化が無ければDOMを触らない(3秒ポーリングのたびに作り直すと、
+  // 押そうとした瞬間にボタンが差し替わってクリックが失われるため)
+  const sig = activeProject + "|" + projects.map(p => `${p.name}:${p.running}:${p.done}:${p.fail}:${p.total}`).join(",");
+  if (sig === projSig) return;
+  projSig = sig;
+  $("#proj-count").textContent = projects.length ? projects.length + "件" : "";
+  if (!projects.length){ body.innerHTML = `<div class="list-empty">プロジェクトが見つかりません</div>`; return; }
+  body.innerHTML = "";
+  projects.forEach(p => {
+    const cls = p.fail ? "fail" : p.running ? "run" : (p.total && p.done === p.total) ? "done" : "";
+    const b = document.createElement("button");
+    b.className = `proj ${cls} ${p.name === activeProject ? "active" : ""}`;
+    b.innerHTML = `<span class="dot"></span><span class="nm">${esc(p.name)}</span><span class="ct">${p.running ? p.running + " 実行中" : p.total ? p.done + "/" + p.total : ""}</span>`;
+    b.addEventListener("click", () => selectProject(p.name));
+    body.appendChild(b);
+  });
+}
+async function selectProject(name){
+  if (name !== activeProject){
+    activeProject = name; selectedTaskId = null;
+    renderProjects(); renderTasksWin();
+    try{ await fetch("/api/workspace", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ browserSessionId, project: name }) }); }catch{}
+    refreshData();
+  }
+}
+
+/* ============ render: tasks / activity ============ */
+const rank = t => t.status === "running" ? 0 : t.status === "queued" ? 1 : t.status === "failed" ? 2 : 3;
+function shownTasks(){ return (activeProject ? tasksAll.filter(t => t.project === activeProject) : tasksAll).slice().sort((a, b) => rank(a) - rank(b) || (b.startedAt - a.startedAt)); }
+
+let tasksSig = "";
+function renderTasksWin(force){
+  const body = $("#tasks-body");
+  const list0 = seg === "activity" ? tasksAll : shownTasks();
+  // 選択中タスクの出力(liveText/result)の伸びも含めて変化検知し、無変化なら再描画しない
+  const det = selectedTaskId ? detailsCache[selectedTaskId] : null;
+  const sig = seg + "|" + activeProject + "|" + selectedTaskId + "|" + [...acked].length + "|" +
+    (det ? (det.liveText || "").length + ":" + det.events.length : "") + "|" +
+    list0.map(t => `${t.id}:${t.status}:${t.priority}:${(t.result || t.error || "").length}`).join(",");
+  if (!force && sig === tasksSig) return;
+  // 追加指示などの入力中は再描画で入力欄を消さない
+  if (!force && body.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;
+  tasksSig = sig;
+  if (seg === "activity"){ renderActivity(body); return; }
+  const list = shownTasks();
+  if (!list.length){ body.innerHTML = `<div class="list-empty">タスクはまだありません。<br>話しかけると Claude Code がタスクを起動します。</div>`; return; }
+  body.innerHTML = "";
+  list.forEach(t => {
+    const sel = t.id === selectedTaskId;
+    // 注意: カード内に入力欄・ボタンを持つため <button> は使えない(入れ子の
+    // 対話要素は不正でクリックが不安定になる)。div+role で代替する。
+    const el = document.createElement("div");
+    el.className = `task ${sel ? "sel" : ""}`;
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
+    el.dataset.id = t.id;
+    let html = `<div class="top"><span class="cap ${t.status}">${STATUS_JA[t.status] || t.status}</span>${t.priority === "urgent" ? '<span class="cap urgent">緊急</span>' : ""}<span class="seq">#${t.seq ?? ""}</span></div>
+      <div class="ti">${esc(t.instruction)}</div>
+      <div class="meta">${activeProject ? "" : esc(t.project) + " · "}${timeAgo(t.endedAt || t.startedAt)}</div>`;
+    if (sel) html += taskDetailHTML(t);
+    if (t.status === "running") html += `<div class="runbar"><i></i></div>`;
+    el.innerHTML = html;
+    el.addEventListener("click", e => {
+      if (e.target.closest(".pill-btn") || e.target.closest(".t-form")) return;
+      selectedTaskId = sel ? null : t.id;
+      renderTasksWin();
+      if (!sel) void loadDetail(t.id);
+    });
+    el.addEventListener("keydown", e => {
+      if ((e.key === "Enter" || e.key === " ") && e.target === el){ e.preventDefault(); el.click(); }
+    });
+    if (sel) wireTaskActions(el, t);
+    body.appendChild(el);
+  });
+  const selEl = body.querySelector(".task.sel");
+  if (selEl && typeof selEl.scrollIntoView === "function") selEl.scrollIntoView({ block: "nearest" });
+}
+function taskDetailHTML(t){
+  const det = detailsCache[t.id];
+  const out = t.status === "running" ? (det && det.liveText) || t.lastEvent || "実行中…" : t.result || t.error || "（出力はありません）";
+  const tools = det ? det.events.filter(e => e.kind === "tool").slice(-3) : [];
+  const acts = [];
+  if (t.status === "running"){ acts.push(`<button class="pill-btn" data-a="instruct">追加指示</button>`, `<button class="pill-btn danger" data-a="cancel">中止</button>`); }
+  else if (t.status === "queued"){ acts.push(`<button class="pill-btn danger" data-a="cancel">取り下げ</button>`); }
+  else if (t.sessionId){ acts.push(`<button class="pill-btn go" data-a="resume">引き継いで依頼</button>`); }
+  return `<div class="t-detail"><div class="t-out">${esc(out)}</div>
+    ${tools.length ? `<div class="t-tools">${tools.map(e => `<span>⚙ ${esc(e.text)}</span>`).join("")}</div>` : ""}
+    ${acts.length ? `<div class="t-acts">${acts.join("")}</div>` : ""}
+    <div class="t-slot"></div></div>`;
+}
+function wireTaskActions(el, t){
+  el.querySelectorAll(".pill-btn").forEach(b => b.addEventListener("click", async e => {
+    e.stopPropagation();
+    const a = b.dataset.a;
+    if (a === "cancel"){ await fetch(`/api/tasks/${t.id}/cancel`, { method: "POST", headers: { "content-type": "application/json" } }).catch(() => {}); refreshData(); return; }
+    const slot = el.querySelector(".t-slot");
+    const isResume = a === "resume";
+    slot.innerHTML = `<div class="t-form"><input placeholder="${isResume ? "引き継いで何をしますか？" : "追加の指示…"}" /><button class="pill-btn go">送信</button></div>`;
+    const inp = slot.querySelector("input"); inp.focus();
+    const go = async () => {
+      const v = inp.value.trim(); if (!v) return;
+      if (isResume){
+        await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ browserSessionId, resume: t.id, instruction: v }) }).catch(() => {});
+        addMsg("system", `タスク #${t.seq} を引き継いで開始: ${v}`);
+      } else {
+        await fetch(`/api/tasks/${t.id}/instructions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: v }) }).catch(() => {});
+        addMsg("system", `タスク #${t.seq} に追加指示: ${v}`);
+      }
+      refreshData();
+    };
+    slot.querySelector(".pill-btn").addEventListener("click", e2 => { e2.stopPropagation(); go(); });
+    inp.addEventListener("click", e2 => e2.stopPropagation());
+    inp.addEventListener("keydown", e2 => { if (e2.key === "Enter" && !e2.isComposing){ e2.preventDefault(); go(); } });
+  }));
+}
+function renderActivity(body){
+  const items = [];
+  tasksAll.forEach(t => {
+    if (t.endedAt) items.push({ ts: t.endedAt, kind: t.status, t, review: (t.status === "succeeded" || t.status === "failed") && !acked.has(t.id) });
+    else items.push({ ts: t.startedAt, kind: t.status, t });
+  });
+  items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (!items.length){ body.innerHTML = `<div class="list-empty">アクティビティはまだありません</div>`; return; }
+  body.innerHTML = "";
+  items.slice(0, 20).forEach(it => {
+    const cls = it.kind === "succeeded" ? "ok" : it.kind === "failed" ? "fail" : it.kind === "running" ? "run" : "";
+    const el = document.createElement("div");
+    el.className = `evt ${cls} ${it.review ? "review" : ""}`;
+    el.innerHTML = `<span class="tm">${hhmm(it.ts)}</span><span class="dot"></span><div class="bx">
+      <div class="lb">${it.review ? "確認待ち" : STATUS_JA[it.kind] || it.kind}</div>
+      <div class="tx">${esc(it.t.instruction)}</div>
+      ${it.review ? `<div class="ap"><button class="y" title="確認済み">✓</button><button class="n" title="確認済みにする">✕</button></div>` : ""}</div>`;
+    el.querySelector(".tx").addEventListener("click", () => {
+      if (it.t.project !== activeProject) selectProject(it.t.project);
+      seg = "tasks"; updateSeg(); selectedTaskId = it.t.id; renderTasksWin(); void loadDetail(it.t.id); flash("win-tasks");
+    });
+    if (it.review) el.querySelectorAll(".ap button").forEach(b => b.addEventListener("click", () => { acked.add(it.t.id); saveAcked(); renderTasksWin(); renderProjects(); }));
+    body.appendChild(el);
+  });
+}
+function updateSeg(){ document.querySelectorAll(".seg button").forEach(b => b.classList.toggle("on", b.dataset.seg === seg)); }
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { seg = b.dataset.seg; updateSeg(); renderTasksWin(); }));
+
+/* ============ chat ============ */
+const chatBody = $("#chat-body");
+let ttsOn = true;
+$("#tts-btn").addEventListener("click", () => { ttsOn = !ttsOn; $("#tts-btn").classList.toggle("on", ttsOn); if (!ttsOn) speechSynthesis.cancel(); });
+function addMsg(role, text){
+  const empty = $("#chat-empty"); if (empty) empty.remove();
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.textContent = text;
+  chatBody.appendChild(div);
+  chatBody.scrollTop = chatBody.scrollHeight;
+  return div;
+}
+let activeChatAbort = null;
+const interruptChat = () => { if (activeChatAbort) activeChatAbort.abort(); };
+async function sendMessage(message){
+  const clean = String(message).trim(); if (!clean) return;
+  interruptChat();
+  const controller = new AbortController(); activeChatAbort = controller;
+  addMsg("user", clean);
+  const bubble = addMsg("assistant", "…");
+  let first = true, finalText = "";
+  try{
+    const res = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ browserSessionId, message: clean }), signal: controller.signal });
+    if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
+    const rd = res.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for(;;){
+      const { done, value } = await rd.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const blocks = buf.split("\n\n"); buf = blocks.pop() ?? "";
+      for (const bl of blocks){
+        const ev = /^event: (.*)$/m.exec(bl)?.[1], dr = /^data: (.*)$/m.exec(bl)?.[1];
+        if (!ev || dr === undefined) continue;
+        let d; try{ d = JSON.parse(dr); }catch{ continue; }
+        if (ev === "delta"){ if (first){ bubble.textContent = ""; first = false; } bubble.textContent += d.text; chatBody.scrollTop = chatBody.scrollHeight; }
+        else if (ev === "directive"){ if (d.detail) addMsg("system", (d.ok ? "⚙ " : "⚠ ") + d.detail); refreshData(); flash("win-tasks"); }
+        else if (ev === "done"){ finalText = d.text || bubble.textContent; bubble.textContent = finalText; }
+        else if (ev === "error"){ bubble.textContent = "エラー: " + (d.message || ""); }
+      }
+    }
+    if (finalText) speak(finalText);
+    refreshData();
+  }catch(err){
+    if (!controller.signal.aborted) bubble.textContent = "接続エラー: " + (err && err.message || err);
+  }finally{
+    if (activeChatAbort === controller) activeChatAbort = null;
+  }
+}
+
+/* ============ dispatch queue(緊急割り込み) + 発話→表示同期 ============ */
+let queue = [], pumping = false, qid = 0;
+const projNames = () => projects.map(p => p.name);
+const classify = t => window.CVIntent ? CVIntent.classify(t, CFG, projNames()) : { urgency: "normal", send: { triggered: false }, view: { action: "none" } };
+function renderQ(){ $("#qchips").innerHTML = queue.slice(0, 3).map(q => `<span class="qc ${q.u ? "urg" : ""}">${esc(q.text)}</span>`).join("") + (queue.length > 3 ? `<span class="qc">+${queue.length - 3}</span>` : ""); }
+function enqueue(text){
+  syncView(text);
+  const item = { id: ++qid, text, u: classify(text).urgency === "urgent" };
+  if (item.u){ const i = queue.findIndex(q => !q.u); i === -1 ? queue.push(item) : queue.splice(i, 0, item); interruptChat(); speechSynthesis.cancel(); }
+  else queue.push(item);
+  renderQ(); pump();
+}
+async function pump(){
+  if (pumping) return; pumping = true;
+  try{ while (queue.length){ const it = queue.shift(); renderQ(); await sendMessage(it.text); } }
+  finally{ pumping = false; }
+}
+function syncView(text){
+  const v = classify(text).view;
+  if (v.action === "task"){
+    const t = tasksAll.find(x => Number(x.seq) === Number(v.seq));
+    if (t){ if (t.project !== activeProject) selectProject(t.project); seg = "tasks"; updateSeg(); selectedTaskId = t.id; renderTasksWin(); void loadDetail(t.id); flash("win-tasks"); }
+  } else if (v.action === "project"){ selectProject(v.project); flash("win-projects"); }
+  else if (v.action === "collapse"){ selectedTaskId = null; renderTasksWin(); }
+}
+
+/* ============ 入力(テキスト+音声) ============ */
+const cmd = $("#cmd"), sendBtn = $("#sendbtn"), micBtn = $("#mic"), interimEl = $("#interim");
+cmd.addEventListener("input", () => sendBtn.disabled = !cmd.value.trim());
+function submit(){ const v = cmd.value.trim(); if (!v) return; speechSynthesis.cancel(); enqueue(v); cmd.value = ""; sendBtn.disabled = true; }
+sendBtn.addEventListener("click", submit);
+cmd.addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing){ e.preventDefault(); submit(); } });
+
+function clipSpeech(t){ const s = String(t); if (s.length <= 220) return s; const c = s.slice(0, 220), p = Math.max(c.lastIndexOf("。"), c.lastIndexOf("."), c.lastIndexOf("\n")); return (p > 60 ? c.slice(0, p + 1) : c) + " 以下略"; }
+function speak(t){ if (!ttsOn || !("speechSynthesis" in window)) return; try{ speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(clipSpeech(t)); u.lang = "ja-JP"; u.rate = 1.15; speechSynthesis.speak(u); }catch{} }
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, silenceTimer = null;
+function detectSendCmd(text){ const s = classify(text).send; return s && s.triggered ? s.body : null; }
+function armAutoSend(){ if (silenceTimer) clearTimeout(silenceTimer); if (cmd.value.trim()) silenceTimer = setTimeout(() => { const v = cmd.value.trim(); cmd.value = ""; sendBtn.disabled = true; if (v) enqueue(v); }, CFG.autoSendMs || 2000); }
+function startRec(){
+  if (!SR){ addMsg("system", "⚠ このブラウザは音声認識非対応です（Chrome推奨）"); return; }
+  rec = new SR(); rec.lang = "ja-JP"; rec.continuous = true; rec.interimResults = true;
+  rec.onresult = e => {
+    let interim = "", finals = "";
+    for (let i = e.resultIndex; i < e.results.length; i++){ const r = e.results[i]; r.isFinal ? finals += r[0].transcript : interim += r[0].transcript; }
+    if (speechSynthesis.speaking && finals.trim()) speechSynthesis.cancel();  // バージイン
+    if (finals){ cmd.value = (cmd.value + finals).trim(); sendBtn.disabled = !cmd.value.trim(); }
+    interimEl.textContent = interim; interimEl.classList.toggle("show", !!interim);
+    const body = detectSendCmd(cmd.value + interim);
+    if (body){ if (silenceTimer) clearTimeout(silenceTimer); cmd.value = ""; sendBtn.disabled = true; interimEl.classList.remove("show"); enqueue(body); return; }
+    if (finals) armAutoSend();
+  };
+  rec.onend = () => { if (listening){ try{ rec.start(); }catch{} } };
+  rec.onerror = () => {};
+  try{ rec.start(); listening = true; micBtn.classList.add("on"); }catch{}
+}
+function stopRec(){ listening = false; if (rec){ try{ rec.stop(); }catch{} } micBtn.classList.remove("on"); interimEl.classList.remove("show"); }
+micBtn.addEventListener("click", () => listening ? stopRec() : startRec());
+
+/* ============ ウィンドウ表示切替(タブオーナメント) ============ */
+function setWin(name, show){
+  const el = document.getElementById("win-" + name);
+  const tb = document.querySelector(`#tabbar .tb[data-win="${name}"]`);
+  if (el) el.classList.toggle("hidden", !show);
+  if (tb) tb.classList.toggle("on", show);
+}
+document.querySelectorAll("#tabbar .tb[data-win]").forEach(b =>
+  b.addEventListener("click", () => setWin(b.dataset.win, !b.classList.contains("on"))));
+document.querySelectorAll(".winbar .close").forEach(b =>
+  b.addEventListener("click", () => setWin(b.dataset.close, false)));
+
+/* ============ 視差 ============
+   UI(ウィンドウ/オーナメント)の上ではシーンを静止させる。動かしたまま
+   だとクリック中に対象がズレて「ボタンが押せない」状態になるため、
+   視差は背景をなでている間だけの演出にする。 */
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches){
+  let raf = 0;
+  addEventListener("pointermove", e => {
+    if (raf) cancelAnimationFrame(raf);
+    const overUI = e.target && e.target.closest && e.target.closest(".window, #ornament, #tabbar, #timepill");
+    raf = requestAnimationFrame(() => {
+      const px = overUI ? 0 : (e.clientX / innerWidth) * 2 - 1;
+      const py = overUI ? 0 : (e.clientY / innerHeight) * 2 - 1;
+      document.documentElement.style.setProperty("--px", (px * 0.55).toFixed(3));
+      document.documentElement.style.setProperty("--py", (py * 0.55).toFixed(3));
+    });
+  }, { passive: true });
+}
+
+/* ============ 起動 ============ */
+function tickClock(){ $("#clock").textContent = hhmm(); }
+(async function init(){
+  tickClock(); setInterval(tickClock, 15000);
+  try{
+    const h = await (await fetch("/api/health")).json();
+    const cli = h.mode === "cli";
+    $("#mode").textContent = cli ? "Claude Code 接続" : h.mode === "mock" ? "モック" : h.mode;
+    $("#modewrap").classList.toggle("cli", cli);
+    $("#chat-sub").textContent = cli ? "Claude Code" : h.mode;
+  }catch{ $("#mode").textContent = "オフライン"; }
+  await refreshData();
+  setInterval(refreshData, 3000);
+})();
+</script>
+</body>
+</html>

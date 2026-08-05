@@ -1,0 +1,1156 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23b9c8ff' stroke-width='2.5'/%3E%3C/svg%3E" />
+<title>claude-voice — Spatial Console</title>
+<style>
+:root{
+  --void-1:#0b0c11; --void-2:#16181f;
+  --glass:rgba(255,255,255,.055); --glass-strong:rgba(255,255,255,.10);
+  --edge:rgba(255,255,255,.14); --edge-strong:rgba(255,255,255,.30);
+  --accent:#b9c8ff; --accent-dim:#5f6a95;
+  --ink:#f3f4f7; --ink-dim:#93979f;
+  --ok:#7fe6bf; --warn:#ffcd8a; --bad:#ff8da0; --done:#6c707a;
+  --rail:400px;
+  --font-ui: -apple-system, ui-sans-serif, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0; overflow:hidden; background:var(--void-1); color:var(--ink); font-family:var(--font-ui); -webkit-font-smoothing:antialiased;}
+
+/* ---- spatial stage (left of the chat rail) ---- */
+#stage{position:fixed; inset:0; right:var(--rail); perspective:1700px; cursor:default;}
+#backdrop{position:absolute; inset:0; z-index:0;
+  background:
+    radial-gradient(ellipse 900px 600px at 50% 38%, rgba(140,160,255,.09), transparent 60%),
+    linear-gradient(160deg, var(--void-2), var(--void-1) 65%);}
+#haze{position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.5;
+  background:radial-gradient(circle at 50% 100%, rgba(120,140,255,.08), transparent 55%);}
+#world{position:absolute; inset:0; z-index:1; transform-style:preserve-3d; transition:transform .6s cubic-bezier(.16,.84,.32,1);}
+.node{position:absolute; left:0; top:0; will-change:transform, opacity, filter;
+  transform:translate3d(var(--x,0px), var(--y,0px), var(--z,0px)) translate(-50%,-50%) scale(var(--s,1));
+  opacity:var(--o,1); filter:blur(var(--b,0px));
+  transition:transform .8s cubic-bezier(.16,.84,.32,1), opacity .55s ease, filter .55s ease;
+  pointer-events:auto;}
+.node.is-hidden{pointer-events:none;}
+.float{animation:float 7s ease-in-out infinite;}
+@keyframes float{0%,100%{margin-top:0px;} 50%{margin-top:-9px;}}
+.glass{background:var(--glass); border:1px solid var(--edge); backdrop-filter:blur(18px) saturate(140%); border-radius:22px;}
+
+.proj{display:flex; flex-direction:column; align-items:center; gap:12px; width:160px; padding:0;
+  background:none; border:none; box-shadow:none; cursor:pointer; color:inherit; font:inherit; text-align:center;}
+.proj:focus-visible{outline:2px solid var(--accent); outline-offset:4px;}
+.proj .orb{position:relative; width:84px; height:84px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+  background:var(--glass); border:1px solid var(--edge); backdrop-filter:blur(18px) saturate(140%);
+  box-shadow:0 14px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+  transition:width .5s cubic-bezier(.16,.84,.32,1), height .5s cubic-bezier(.16,.84,.32,1);}
+.proj .orb svg{position:absolute; inset:0; transform:rotate(-90deg);}
+.proj .orb svg circle{fill:none; stroke-width:2.5;}
+.proj .orb svg circle.track{stroke:rgba(255,255,255,.1);}
+.proj .orb svg circle.fill{stroke-linecap:round; transition:stroke-dashoffset .6s ease;}
+.proj .orb .mono{position:relative; z-index:1; font-family:var(--font-mono); font-size:16px; color:var(--accent);}
+.proj .orb .live-ping{position:absolute; inset:-4px; border-radius:50%; border:1px solid var(--warn); opacity:0; }
+.proj.has-running .orb .live-ping{animation:ping 2.2s ease-out infinite;}
+@keyframes ping{0%{transform:scale(1); opacity:.6;} 100%{transform:scale(1.35); opacity:0;}}
+.proj .panel{display:flex; flex-direction:column; gap:4px;}
+.proj .eyebrow{display:none; font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-dim); font-weight:500;}
+.proj h3{margin:0; font-size:13.5px; font-weight:600; letter-spacing:-.01em; color:var(--ink); text-wrap:balance;}
+.proj .meta{display:flex; align-items:center; justify-content:center; gap:8px; font-size:11px; color:var(--ink-dim);}
+.dot{width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor;}
+.c-on-track{color:var(--ok);} .c-at-risk{color:var(--warn);} .c-blocked{color:var(--bad);} .c-critical{color:var(--bad);} .c-done{color:var(--done);}
+.proj .load{display:none; gap:4px; margin-top:6px; width:230px;}
+.proj .load i{flex:1; height:3px; border-radius:2px; background:rgba(255,255,255,.1);}
+.proj .load i.on{background:var(--accent);}
+.proj.is-focused{flex-direction:row; width:auto; gap:26px; text-align:left;}
+.proj.is-focused .orb{width:132px; height:132px; box-shadow:0 20px 50px rgba(0,0,0,.4), 0 0 60px rgba(185,200,255,.12);}
+.proj.is-focused .orb .mono{font-size:24px;}
+.proj.is-focused .eyebrow{display:block;}
+.proj.is-focused h3{font-size:23px; margin-bottom:6px;}
+.proj.is-focused .meta{justify-content:flex-start;}
+.proj.is-focused .load{display:flex;}
+.proj.is-focused .panel{background:var(--glass-strong); border:1px solid var(--edge-strong); border-radius:22px; padding:24px 26px;
+  backdrop-filter:blur(18px) saturate(140%); box-shadow:0 30px 80px rgba(0,0,0,.5), 0 0 60px rgba(185,200,255,.08);}
+
+.task{width:214px; padding:16px 18px; text-align:left; cursor:pointer; color:inherit; font:inherit;
+  box-shadow:0 14px 34px rgba(0,0,0,.32);}
+.task:focus-visible{outline:2px solid var(--accent); outline-offset:4px;}
+.task .pill{display:inline-flex; align-items:center; gap:5px; font-size:10px; letter-spacing:.06em;
+  padding:3px 9px; border-radius:20px; margin-bottom:10px; background:rgba(255,255,255,.08); font-weight:500;}
+.task .pill.p-urgent{background:rgba(255,205,138,.16); color:var(--warn);}
+.task h4{margin:0 0 8px; font-size:14px; font-weight:600; line-height:1.4; color:var(--ink); text-wrap:balance;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+.task .row{display:flex; gap:8px; font-size:11px; color:var(--ink-dim);}
+.task .row span:first-child{flex:none; white-space:nowrap;}
+.task .row span:last-child{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right;}
+.task.is-focused{width:380px; padding:32px 34px; background:var(--glass-strong); border-color:var(--edge-strong);
+  box-shadow:0 30px 90px rgba(0,0,0,.5), 0 0 70px rgba(185,200,255,.08);}
+.task.is-focused h4{font-size:20px; margin-bottom:12px; -webkit-line-clamp:5;}
+.task .detail{display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--edge); font-size:13px; line-height:1.6; color:var(--ink-dim);
+  max-height:220px; overflow:auto; white-space:pre-wrap;}
+.task.is-focused .detail{display:block;}
+.task .owner{display:flex; align-items:center; gap:10px; margin-top:14px;}
+.avatar{width:28px; height:28px; border-radius:50%; border:1px solid var(--edge-strong); display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-mono); font-size:10px; color:var(--accent); background:rgba(185,200,255,.08); flex:none;}
+.task.is-focused .avatar{width:36px; height:36px; font-size:11px;}
+
+#breadcrumb{position:absolute; top:24px; left:28px; z-index:3; display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:500; flex-wrap:wrap; max-width:60%;}
+#breadcrumb button{background:none; border:none; color:var(--ink-dim); font:inherit; cursor:pointer; padding:4px 2px;}
+#breadcrumb button:last-child{color:var(--ink);}
+#breadcrumb button:hover{color:var(--accent);}
+#breadcrumb .sep{color:var(--accent-dim);}
+
+#shelf{position:absolute; left:50%; bottom:26px; transform:translateX(-50%); z-index:3; display:flex; gap:12px; align-items:flex-end; max-width:92%; flex-wrap:wrap; justify-content:center;}
+.chip{padding:10px 16px; border-radius:16px; text-align:left; cursor:pointer; color:inherit; font:inherit; min-width:140px;
+  background:var(--glass); border:1px solid var(--edge); backdrop-filter:blur(14px);}
+.chip:focus-visible{outline:2px solid var(--accent);}
+.chip .eyebrow{font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim);}
+.chip h5{margin:3px 0 0; font-size:12.5px; font-weight:600; color:var(--ink);}
+.chip .dot{width:6px; height:6px; display:inline-block; margin-right:6px;}
+
+#notif-stack{position:absolute; top:22px; right:24px; z-index:3; display:flex; flex-direction:column; gap:10px; width:250px;}
+.notif{display:flex; gap:10px; align-items:flex-start; padding:12px 14px; text-align:left; cursor:pointer; color:inherit; font:inherit;
+  background:rgba(255,141,160,.08); border:1px solid rgba(255,141,160,.28); border-radius:16px; backdrop-filter:blur(14px);}
+.notif:focus-visible{outline:2px solid var(--bad);}
+.notif .dot{background:var(--bad); box-shadow:0 0 8px var(--bad); margin-top:5px; flex:none; animation:pulse 2.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.4;}}
+.notif p{margin:0; font-size:12px; line-height:1.5; color:#ffd9e0;}
+
+#empty-hint{position:absolute; left:50%; top:42%; transform:translate(-50%,-50%); z-index:2; text-align:center; color:var(--ink-dim); max-width:360px; pointer-events:none; opacity:0; transition:opacity .5s ease;}
+#empty-hint.show{opacity:1;}
+#empty-hint h2{font-size:17px; color:var(--ink); font-weight:600; margin:0 0 8px;}
+#empty-hint p{font-size:13px; line-height:1.7; margin:0;}
+
+/* ---- chat rail (right) ---- */
+#chat-rail{position:fixed; top:0; right:0; bottom:0; width:var(--rail); z-index:4; display:flex; flex-direction:column;
+  background:linear-gradient(180deg, rgba(20,22,30,.72), rgba(11,12,17,.82)); backdrop-filter:blur(22px) saturate(140%);
+  border-left:1px solid var(--edge);}
+#chat-head{display:flex; align-items:center; gap:10px; padding:16px 18px; border-bottom:1px solid var(--edge);}
+#chat-head .brand{display:flex; align-items:center; gap:9px; margin-right:auto;}
+#chat-head .brand .bmark{width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent);}
+#chat-head .brand b{font-size:13px; font-weight:600; letter-spacing:.02em;}
+#mode-badge{font-family:var(--font-mono); font-size:10px; padding:3px 9px; border-radius:999px; border:1px solid var(--edge); color:var(--ink-dim);}
+#mode-badge.cli{color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent);}
+.tts-toggle{display:flex; align-items:center; gap:6px; font-size:11px; color:var(--ink-dim); cursor:pointer;}
+.cal-link{text-decoration:none; color:var(--ink-dim); font-size:14px; line-height:1; padding:2px 4px; border-radius:6px;}
+.cal-link:hover{color:var(--accent); background:var(--glass);}
+.gaze-btn{background:none; border:none; color:var(--ink-dim); font-size:14px; line-height:1; padding:2px 4px; border-radius:6px; cursor:pointer;}
+.gaze-btn:hover{color:var(--accent); background:var(--glass);}
+.gaze-btn.on{color:var(--accent); background:var(--glass); box-shadow:0 0 10px rgba(185,200,255,.35);}
+
+/* ---- gaze: 視線ポインター / 注視ハイライト / キャリブレーション ---- */
+#gaze-pointer{position:fixed; z-index:50; width:40px; height:40px; margin:-20px 0 0 -20px; border-radius:50%; pointer-events:none; display:none;
+  background:radial-gradient(circle at 50% 50%, rgba(185,200,255,.28), transparent 62%);
+  box-shadow:0 0 22px rgba(185,200,255,.5); mix-blend-mode:screen; transition:left .06s linear, top .06s linear;}
+#gaze-pointer .ring{position:absolute; inset:0; border-radius:50%; -webkit-mask:radial-gradient(circle, transparent 60%, #000 62%); mask:radial-gradient(circle, transparent 60%, #000 62%); background:conic-gradient(var(--accent) 0deg, transparent 0deg);}
+#gaze-pointer .core{position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent);}
+#gaze-hud{position:fixed; z-index:51; display:none; pointer-events:none; padding:6px 12px; border-radius:999px; font-size:12px; white-space:nowrap;
+  background:rgba(20,22,30,.82); border:1px solid var(--edge-strong); backdrop-filter:blur(10px); color:var(--ink); box-shadow:0 8px 24px rgba(0,0,0,.4);}
+#gaze-hud .k{color:var(--accent); font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; margin-right:6px;}
+.proj.gazed .orb{border-color:var(--accent); box-shadow:0 14px 30px rgba(0,0,0,.4), 0 0 34px rgba(185,200,255,.5);}
+.task.gazed{border-color:var(--accent-strong,#b9c8ff); box-shadow:0 14px 34px rgba(0,0,0,.4), 0 0 30px rgba(185,200,255,.45);}
+#webgazerVideoContainer{position:fixed !important; left:12px !important; bottom:12px !important; top:auto !important; z-index:48 !important;
+  width:150px !important; height:auto !important; border-radius:12px; overflow:hidden; border:1px solid var(--edge); opacity:.85; box-shadow:0 10px 30px rgba(0,0,0,.4);}
+#webgazerVideoFeed, #webgazerVideoCanvas{width:150px !important; height:auto !important; border-radius:12px;}
+#gaze-calib{position:fixed; inset:0; z-index:60; background:rgba(11,12,17,.72); backdrop-filter:blur(3px);}
+#gaze-calib .msg{position:absolute; left:50%; top:8%; transform:translateX(-50%); text-align:center; font-size:13px; color:var(--ink); max-width:420px; line-height:1.7;}
+#gaze-calib .msg .btn{margin-top:10px; background:var(--glass); border:1px solid var(--edge); color:var(--ink); border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer;}
+.calib-dot{position:absolute; width:24px; height:24px; margin:-12px; border-radius:50%; background:var(--accent); cursor:pointer;
+  box-shadow:0 0 16px var(--accent); animation:pulse 1.6s ease-in-out infinite;}
+.calib-dot:hover{transform:scale(1.2);}
+.calib-dot.done{background:var(--ok); box-shadow:0 0 10px var(--ok); animation:none; opacity:.5;}
+/* 頭の左右振り(ヨー)インジケータと調整パネル */
+#head-ind{position:fixed; left:50%; top:62px; transform:translateX(-50%); z-index:51; width:200px; height:6px; display:none; pointer-events:none;}
+#head-ind .ax{position:absolute; inset:0; border-radius:3px; background:rgba(255,255,255,.12);}
+#head-ind .mk{position:absolute; top:-4px; left:50%; width:14px; height:14px; margin-left:-7px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); transition:left .08s linear;}
+#head-ind.left .mk, #head-ind.right .mk{background:var(--warn); box-shadow:0 0 14px var(--warn);}
+#gaze-ctl{position:fixed; left:12px; bottom:134px; z-index:49; display:none; flex-direction:column; gap:7px; padding:9px 11px; border-radius:11px;
+  background:rgba(20,22,30,.88); border:1px solid var(--edge); backdrop-filter:blur(10px); font-size:11px; color:var(--ink-dim); width:150px; box-shadow:0 10px 26px rgba(0,0,0,.4);}
+#gaze-ctl label{display:flex; align-items:center; gap:6px; color:var(--ink); cursor:pointer;}
+#gaze-ctl .s{display:flex; align-items:center; gap:6px;}
+#gaze-ctl .s .l{flex:none;} #gaze-ctl input[type=range]{flex:1; width:100%; accent-color:var(--accent);}
+#gaze-ctl button{background:var(--glass); border:1px solid var(--edge); color:var(--ink); border-radius:7px; padding:5px 8px; font-size:11px; cursor:pointer;}
+#gaze-ctl button:hover{border-color:var(--edge-strong);}
+#msgs{flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:12px;}
+#msgs .empty{margin:auto; text-align:center; color:var(--ink-dim); font-size:13px; line-height:1.8; max-width:300px;}
+.bubble{max-width:88%; padding:11px 14px; border-radius:15px; line-height:1.65; font-size:13.5px; white-space:pre-wrap; word-break:break-word;
+  animation:rise .4s cubic-bezier(.16,.84,.32,1) both;}
+@keyframes rise{from{opacity:0; transform:translateY(10px) scale(.98);} to{opacity:1; transform:none;}}
+.bubble.user{align-self:flex-end; background:rgba(185,200,255,.14); border:1px solid rgba(185,200,255,.28);}
+.bubble.assistant{align-self:flex-start; background:var(--glass); border:1px solid var(--edge);}
+.bubble.system{align-self:center; background:rgba(255,255,255,.05); border:1px dashed var(--edge); color:var(--ink-dim); font-size:12px;}
+.bubble.interjection{align-self:flex-start; background:rgba(255,205,138,.10); border:1px dashed rgba(255,205,138,.5); font-size:12.5px;}
+.bubble .tag{display:block; font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; color:var(--warn); margin-bottom:4px;}
+#dock{border-top:1px solid var(--edge); padding:12px 14px 16px; display:flex; flex-direction:column; gap:10px;}
+#live-strip{display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 12px; border-radius:12px;
+  background:var(--glass); border:1px solid var(--edge); transition:border-color .3s, box-shadow .3s;}
+#live-strip.on-air{border-color:color-mix(in srgb, var(--accent) 55%, transparent); box-shadow:0 0 16px rgba(185,200,255,.25);}
+#live-label{font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; color:var(--ink-dim); flex:none;}
+#live-strip.on-air #live-label{color:var(--accent); animation:pulse 1.6s ease-in-out infinite;}
+#live-text{flex:1; min-width:0; font-size:13px; color:var(--ink);}
+#live-text .interim{color:var(--ink-dim);}
+#live-text:empty::before{content:"話しかけてください（文末に「送信」でも送れます）"; color:var(--ink-dim); font-size:12px;}
+#queue-strip{display:none; flex-wrap:wrap; gap:6px; align-items:center;}
+#queue-strip.show{display:flex;}
+#queue-strip .qlabel{font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; color:var(--accent);}
+.qitem{display:inline-flex; align-items:center; gap:5px; max-width:200px; padding:3px 9px; border-radius:999px; background:var(--glass);
+  border:1px solid var(--edge); font-size:11px; color:var(--ink-dim);}
+.qitem .qtext{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.qitem.urgent{border-color:color-mix(in srgb, var(--warn) 55%, transparent); color:var(--ink);}
+#controls{display:flex; align-items:center; gap:10px;}
+#mic{width:46px; height:46px; border-radius:50%; border:2px solid var(--accent); background:transparent; color:var(--accent);
+  font-size:15px; cursor:pointer; flex:none; transition:background .2s, box-shadow .2s;}
+#mic:hover{background:rgba(185,200,255,.14);}
+#mic.on{background:var(--accent); color:#0b0c11; animation:micpulse 1.8s ease-in-out infinite;}
+#mic:disabled{opacity:.35; cursor:not-allowed;}
+@keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(185,200,255,.4);} 50%{box-shadow:0 0 18px 4px rgba(185,200,255,.45);}}
+#draft{flex:1; min-width:0; background:var(--glass); border:1px solid var(--edge); border-radius:11px; padding:11px 13px; color:var(--ink); font:inherit; font-size:13px; outline:none;}
+#draft:focus{border-color:color-mix(in srgb, var(--accent) 50%, transparent);}
+#send{background:var(--accent); color:#0b0c11; border:none; border-radius:11px; padding:11px 15px; font-size:12px; font-weight:600; cursor:pointer; flex:none;}
+#send:disabled{opacity:.4; cursor:default;}
+.rate{background:var(--glass); color:var(--ink-dim); border:1px solid var(--edge); border-radius:8px; padding:4px 6px; font-size:11px;}
+
+/* ---- view toggle + テーブル一覧（タスク#4: プロジェクト一覧をテーブル形式でも） ---- */
+#view-toggle{position:absolute; top:22px; left:50%; transform:translateX(-50%); z-index:4; display:flex; gap:4px;
+  background:var(--glass); border:1px solid var(--edge); border-radius:10px; padding:3px; backdrop-filter:blur(14px);}
+#view-toggle .vt{background:none; border:none; color:var(--ink-dim); font-size:11px; padding:5px 12px; border-radius:8px; cursor:pointer; font-family:var(--font-mono);}
+#view-toggle .vt:hover{color:var(--ink);}
+#view-toggle .vt.on{background:var(--accent); color:#0b0c11; font-weight:600;}
+#proj-table{position:absolute; inset:66px 32px 28px; z-index:2; display:none; overflow:auto;}
+#stage.table-mode #world, #stage.table-mode #shelf, #stage.table-mode #breadcrumb, #stage.table-mode #empty-hint{display:none;}
+#stage.table-mode #proj-table{display:block;}
+table.pt{width:100%; border-collapse:collapse; font-size:13px;}
+table.pt th{text-align:left; font-family:var(--font-mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); font-weight:500; padding:10px 12px; border-bottom:1px solid var(--edge);}
+table.pt td{padding:12px; border-bottom:1px solid rgba(255,255,255,.06); vertical-align:middle;}
+table.pt tr.prow{cursor:pointer; transition:background .15s;}
+table.pt tr.prow:hover{background:var(--glass);}
+table.pt tr.prow.active{background:color-mix(in srgb,var(--accent) 10%, transparent);}
+table.pt .p-name{font-weight:600; color:var(--ink); display:flex; align-items:center; gap:10px;}
+table.pt .p-code{font-family:var(--font-mono); font-size:11px; color:var(--accent); width:34px; height:34px; border-radius:50%;
+  border:1px solid var(--edge); display:inline-flex; align-items:center; justify-content:center; flex:none; background:var(--glass);}
+table.pt .st{display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-dim);}
+table.pt .count{font-family:var(--font-mono); font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--edge); color:var(--ink-dim);}
+table.pt .count.run{color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,transparent);}
+table.pt .count.done{color:var(--ok); border-color:color-mix(in srgb,var(--ok) 30%,transparent);}
+table.pt .prog{display:inline-block; width:120px; height:4px; border-radius:2px; background:rgba(255,255,255,.1); overflow:hidden; vertical-align:middle;}
+table.pt .prog i{display:block; height:100%; background:var(--accent); box-shadow:0 0 8px var(--accent);}
+
+/* ---- 配置モード（実オブジェクトを直接ドラッグ）＋ 直接指示バー ---- */
+#arrange-btn.on{background:var(--warn); color:#0b0c11; font-weight:600;}
+#stage.arrange #world{cursor:default;}
+#stage.arrange .node{cursor:grab;}
+#stage.arrange .node:active{cursor:grabbing;}
+#stage.arrange .proj .orb, #stage.arrange .task{outline:1px dashed color-mix(in srgb,var(--accent) 50%, transparent); outline-offset:3px;}
+#arrange-hint{position:absolute; left:50%; top:60px; transform:translateX(-50%); z-index:4; display:none;
+  font-size:11px; color:var(--warn); background:var(--glass); border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);
+  border-radius:8px; padding:4px 11px; backdrop-filter:blur(14px);}
+#stage.arrange #arrange-hint{display:block;}
+#direct-bar{position:absolute; left:28px; right:28px; bottom:24px; z-index:5; display:none; align-items:center; gap:9px;
+  background:var(--glass); border:1px solid var(--edge); border-radius:12px; padding:9px 13px; backdrop-filter:blur(16px);}
+#direct-bar.show{display:flex;}
+#direct-bar .dtarget{font-family:var(--font-mono); font-size:10px; letter-spacing:.04em; color:var(--accent); white-space:nowrap; flex:none;}
+#direct-input{flex:1; min-width:0; background:var(--void-1); border:1px solid var(--edge); border-radius:9px; padding:9px 11px; color:var(--ink); font:inherit; font-size:13px; outline:none;}
+#direct-input:focus{border-color:color-mix(in srgb,var(--accent) 50%, transparent);}
+#direct-send{flex:none; background:var(--accent); color:#0b0c11; border:none; border-radius:9px; padding:9px 14px; font-size:12px; font-weight:600; cursor:pointer;}
+
+@media (prefers-reduced-motion:reduce){
+  .float,.dot,.proj.has-running .orb .live-ping{animation:none !important;}
+  .node,#world,.bubble{transition-duration:.01ms !important; animation:none !important;}
+}
+@media (max-width:900px){
+  :root{--rail:320px;}
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="backdrop"></div>
+  <div id="haze"></div>
+  <div id="world"></div>
+  <div id="view-toggle">
+    <button class="vt on" data-view="spatial" title="空間ビュー（オーブ）">◎ 空間</button>
+    <button class="vt" data-view="table" title="テーブル一覧">▤ 一覧</button>
+    <button class="vt" id="arrange-btn" title="配置モード：実際のオブジェクトをドラッグして並べ、レイアウトとして保存">✥ 配置</button>
+  </div>
+  <div id="arrange-hint">配置モード：オーブ／タスクをドラッグして並べてください（この画面の配置として自動保存）</div>
+  <div id="proj-table"></div>
+  <div id="breadcrumb"></div>
+  <div id="shelf"></div>
+  <div id="notif-stack"></div>
+  <div id="direct-bar">
+    <span class="dtarget" id="direct-target"></span>
+    <input id="direct-input" placeholder="このプロジェクト/タスクへ直接、細かい指示を入力…" />
+    <button id="direct-send">指示</button>
+  </div>
+  <div id="empty-hint"><h2>プロジェクトのオーブが浮かびます</h2><p>右のパネルで話しかけると、Claude Code がプロジェクトを選び、タスクを実行します。オーブやタスクをクリックすると空間の中で焦点が移動します。</p></div>
+</div>
+
+<aside id="chat-rail">
+  <div id="chat-head">
+    <div class="brand"><span class="bmark"></span><b>claude-voice</b></div>
+    <span id="mode-badge">…</span>
+    <button class="gaze-btn" id="gaze-btn" title="視線トラッキング（カメラで視線の先のタスク/プロジェクトを指す）">👁</button>
+    <a class="cal-link" href="/calibrate.html" target="_blank" title="発言と動作の調整（キャリブレーション）">⚙</a>
+    <label class="tts-toggle"><input type="checkbox" id="tts-on" checked /> 読み上げ</label>
+    <select class="rate" id="rate" aria-label="読み上げ速度"><option>1</option><option selected>1.2</option><option>1.5</option><option>2</option></select>
+  </div>
+  <div id="msgs"><div class="empty">マイク（●）を押すか、下の欄に入力して話しかけてください。<br>「〇〇のテストを回して」「新しいアプリを作って」— 話すだけでプロジェクト選択から実装タスクの実行まで進みます。</div></div>
+  <div id="dock">
+    <div id="queue-strip"><span class="qlabel">順番待ち <span id="qcount">0</span></span><span id="qitems"></span></div>
+    <div id="live-strip"><span id="live-label">OFF</span><span id="live-text"></span></div>
+    <div id="controls">
+      <button id="mic" title="マイクの開始/停止">●</button>
+      <input id="draft" placeholder="キーボードでも話せます" />
+      <button id="send" disabled>送信</button>
+    </div>
+  </div>
+</aside>
+
+<script src="/cv-intent.js"></script>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const browserSessionId = "bs-atrium-" + Math.random().toString(36).slice(2, 10);
+
+/* キャリブレーション設定（calibrate.html で調整）。保存されると別タブでも即反映する */
+let CFG = CVIntent.loadConfig();
+const projNames = () => (typeof PROJECTS !== "undefined" ? PROJECTS.map(p => p.name) : []);
+window.addEventListener("storage", (e) => { if (e.key === CVIntent.STORAGE_KEY){ CFG = CVIntent.loadConfig(); if (typeof render === "function") render(); } });
+/** キャリブレーションで保存したシーン(空間配置)のうち、指定intentの最新を返す */
+function sceneFor(sig){ const list = (CFG && Array.isArray(CFG.scenes)) ? CFG.scenes : []; for (let i = list.length - 1; i >= 0; i--){ const s = list[i]; if (s && s.sig === sig && s.positions) return s; } return null; }
+
+/* ============================ 実データ取得 ============================ */
+let PROJECTS = [];              // オーブに出すプロジェクト {name, code, status, tasks:[], running, done, total}
+let ALL_TASKS = [];             // タスク（Atrium形式）
+let activeProject = null;
+let mode = "…";
+const projectEls = {}, taskEls = {};
+let focus = [];
+let worldSig = "";
+
+const STATUS_JA = { queued:"待機中", running:"実行中", succeeded:"完了", failed:"失敗", cancelled:"中止" };
+
+function deriveCode(name){
+  const parts = String(name).split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return String(name).replace(/[^A-Za-z0-9]/g,"").slice(0,2).toUpperCase() || "・・";
+}
+function projectStatus(tasks){
+  const acted = tasks.filter(t => t.status==="failed").length;
+  if (acted > 0) return "critical";
+  if (tasks.some(t => t.status==="running")) return "at-risk";
+  if (tasks.length && tasks.every(t => t.status==="succeeded" || t.status==="cancelled")) return "done";
+  return "on-track";
+}
+function timeAgo(ts){
+  if (!ts) return "";
+  const sec = Math.max(0, Math.floor((Date.now()-ts)/1000));
+  if (sec < 60) return "たった今";
+  const m = Math.floor(sec/60); if (m<60) return m+"分前";
+  const h = Math.floor(m/60); if (h<24) return h+"時間前";
+  return Math.floor(h/24)+"日前";
+}
+
+async function refreshData(){
+  try{
+    const [pRes, tRes] = await Promise.all([
+      fetch(`/api/projects?all=1&browserSessionId=${browserSessionId}`),
+      fetch(`/api/tasks`),
+    ]);
+    const pJson = await pRes.json(); const tJson = await tRes.json();
+    activeProject = pJson.active ?? activeProject;
+    const tasks = Array.isArray(tJson.tasks) ? tJson.tasks : [];
+    // タスクを持つプロジェクト + アクティブ を優先し、最大6件のオーブに
+    const byProject = new Map();
+    for (const t of tasks){
+      if (!byProject.has(t.project)) byProject.set(t.project, []);
+      byProject.get(t.project).push(t);
+    }
+    let names = [...byProject.keys()];
+    if (activeProject && !names.includes(activeProject)) names.unshift(activeProject);
+    // タスクがまだ無ければ、最初の数プロジェクトを見せる
+    if (names.length === 0 && Array.isArray(pJson.projects)) names = pJson.projects.slice(0,4).map(p=>p.name);
+    names = names.slice(0, 6);
+
+    PROJECTS = names.map(name => {
+      const ts = (byProject.get(name) || []).slice().sort((a,b)=> (a.seq||0)-(b.seq||0));
+      const running = ts.filter(t=>t.status==="running").length;
+      const done = ts.filter(t=>t.status==="succeeded").length;
+      return { name, code:deriveCode(name), status:projectStatus(ts), tasks:ts, running, done, total:ts.length };
+    });
+    ALL_TASKS = PROJECTS.flatMap(p => p.tasks.map(t => ({...t, projectName:p.name})));
+
+    const sig = PROJECTS.map(p => p.name+":"+p.tasks.map(t=>t.id).join(",")).join("|");
+    if (sig !== worldSig){ worldSig = sig; buildWorld(); }
+    // リング・状態・通知は毎回更新
+    updateOrbs();
+    renderNotifs(tasks);
+    // フォーカス先が消えていたら畳む
+    focus = focus.filter(f => f.type==="project" ? projectEls[f.id] : taskEls[f.id]);
+    render();
+    if (viewMode === "table") renderTable();
+    $("#empty-hint").classList.toggle("show", PROJECTS.length === 0);
+  }catch(e){ /* offline */ }
+}
+
+/* ============================ プロジェクト一覧: テーブル形式（空間ビューと切替） ============================ */
+let viewMode = "spatial";
+const STATUS_TABLE = { "on-track":"順調", "at-risk":"実行中", "critical":"要対応", "done":"完了" };
+function setView(mode){
+  viewMode = mode;
+  $("#stage").classList.toggle("table-mode", mode === "table");
+  document.querySelectorAll("#view-toggle .vt").forEach(b=> b.classList.toggle("on", b.dataset.view === mode));
+  if (mode === "table") renderTable();
+}
+function renderTable(){
+  const box = $("#proj-table");
+  if (!PROJECTS.length){ box.innerHTML = `<div style="color:var(--ink-dim); font-size:13px; padding:20px;">プロジェクトがありません。右で話しかけると増えます。</div>`; return; }
+  const rows = PROJECTS.map(p=>{
+    const pct = p.total ? Math.round(p.done/p.total*100) : 0;
+    const st = STATUS_TABLE[p.status] || p.status;
+    const active = (focus[0] && focus[0].id === p.name) ? "active" : "";
+    return `<tr class="prow ${active}" data-name="${escapeHtml(p.name)}">
+      <td><span class="p-name"><span class="p-code">${p.code}</span>${escapeHtml(p.name)}</span></td>
+      <td><span class="st"><span class="dot c-${p.status}"></span>${st}</span></td>
+      <td>${p.running ? `<span class="count run">${p.running} 実行中</span>` : `<span style="color:var(--ink-dim)">—</span>`}</td>
+      <td><span class="count done">${p.done}/${p.total}</span></td>
+      <td><span class="prog"><i style="width:${pct}%"></i></span></td>
+    </tr>`;
+  }).join("");
+  box.innerHTML = `<table class="pt"><thead><tr><th>プロジェクト</th><th>状態</th><th>実行中</th><th>完了</th><th>進捗</th></tr></thead><tbody>${rows}</tbody></table>`;
+  box.querySelectorAll("tr.prow").forEach(tr=> tr.addEventListener("click",(e)=>{ e.stopPropagation(); setView("spatial"); focusProject(tr.dataset.name); }));
+}
+document.querySelectorAll("#view-toggle .vt[data-view]").forEach(b=> b.addEventListener("click",(e)=>{ e.stopPropagation(); setView(b.dataset.view); }));
+
+/* ============================ 配置モード（実オブジェクトを直接D&D） ============================ */
+let arrangeMode = false;
+function stateName(){ return focus.length===0 ? "overview" : focus.length===1 ? "project" : "task"; }
+function setArrange(on){
+  arrangeMode = on;
+  $("#stage").classList.toggle("arrange", on);
+  $("#arrange-btn").classList.toggle("on", on);
+  if (on){ if (viewMode !== "spatial") setView("spatial"); $("#world").style.transform = "none"; }
+  updateDirectBar();
+}
+$("#arrange-btn").addEventListener("click", (e)=>{ e.stopPropagation(); setArrange(!arrangeMode); });
+
+/** ドラッグ中のノードの、現在の画面での役割トークン(orb/t1../tfocus/s1../orbN)を返す */
+function nodeRole(el){
+  const st = stateName();
+  if (el.classList.contains("proj")){
+    const name = el.dataset.id;
+    if (st==="overview"){ const i = PROJECTS.findIndex(p=>p.name===name); return i>=0 ? "orb"+(i+1) : null; }
+    return (focus[0] && focus[0].id===name) ? "orb" : null;
+  }
+  if (el.classList.contains("task")){
+    const tid = el.dataset.id;
+    if (st==="project"){ const fp = PROJECTS.find(p=>p.name===(focus[0]&&focus[0].id)); const i = fp?fp.tasks.findIndex(t=>t.id===tid):-1; return i>=0 ? "t"+(i+1) : null; }
+    if (st==="task"){
+      if (focus[1] && focus[1].id===tid) return "tfocus";
+      const fp = PROJECTS.find(p=>p.name===(focus[0]&&focus[0].id)); const sib = fp?fp.tasks.filter(t=>t.id!==(focus[1]&&focus[1].id)):[];
+      const i = sib.findIndex(t=>t.id===tid); return i>=0 ? "s"+(i+1) : null;
+    }
+  }
+  return null;
+}
+/** ドラッグ結果を、その画面(sig)のシーン配置として cv-calibration に保存＆即適用 */
+function upsertScenePos(sig, tokenId, nx, ny){
+  const cfg = CVIntent.loadConfig();
+  cfg.scenes = Array.isArray(cfg.scenes) ? cfg.scenes : [];
+  let sc = cfg.scenes.find(s=>s.sig===sig);
+  if (!sc){ sc = { id:"s"+Math.round(nx*1e6).toString(36), name:sig, sig, positions:{}, transition:{easing:"smooth", ms:700} }; cfg.scenes.push(sc); }
+  sc.positions = sc.positions || {};
+  sc.positions[tokenId] = { x:nx, y:ny };
+  CVIntent.saveConfig(cfg);
+  CFG = CVIntent.loadConfig();
+}
+let ndrag = null;
+function attachNodeDrag(el){
+  el.addEventListener("pointerdown", (e)=>{
+    if (!arrangeMode) return;
+    e.preventDefault(); e.stopPropagation();
+    ndrag = { el, st: $("#stage").getBoundingClientRect(), moved:false };
+    try{ el.setPointerCapture(e.pointerId); }catch(_){}
+    el.style.transition = "none";
+  });
+  el.addEventListener("pointermove", (e)=>{
+    if (!ndrag || ndrag.el !== el) return;
+    el.style.setProperty("--x", (e.clientX - ndrag.st.left).toFixed(1)+"px");
+    el.style.setProperty("--y", (e.clientY - ndrag.st.top).toFixed(1)+"px");
+    ndrag.moved = true;
+  });
+  el.addEventListener("pointerup", (e)=>{
+    if (!ndrag || ndrag.el !== el) return;
+    el.style.transition = "";
+    if (ndrag.moved){
+      const st = ndrag.st;
+      const nx = Math.max(0.03, Math.min(0.97, (e.clientX - st.left)/st.width));
+      const ny = Math.max(0.04, Math.min(0.96, (e.clientY - st.top)/st.height));
+      const role = nodeRole(el);
+      if (role){ upsertScenePos(stateName(), role, nx, ny); flashArrange(`保存: ${stateName()} / ${role}`); }
+      else { flashArrange("この画面ではこのオブジェクトは保存対象外です", true); }
+    }
+    ndrag = null;
+  });
+}
+let arrangeTimer = null;
+const ARRANGE_HINT = "配置モード：オーブ／タスクをドラッグして並べてください（この画面の配置として自動保存）";
+function flashArrange(msg, warn){
+  const h = $("#arrange-hint"); h.textContent = msg; h.style.color = warn ? "var(--bad)" : "var(--warn)";
+  if (arrangeTimer) clearTimeout(arrangeTimer);
+  arrangeTimer = setTimeout(()=>{ h.textContent = ARRANGE_HINT; h.style.color = "var(--warn)"; }, 2200);
+}
+
+/* ============================ 直接指示バー（対象へ細かい指示を直接送る） ============================ */
+function updateDirectBar(){
+  const bar = $("#direct-bar"), tgt = $("#direct-target");
+  let show = false;
+  if (!arrangeMode && focus.length){
+    const st = stateName();
+    if (st==="task"){
+      const project = PROJECTS.find(p=>p.name===focus[0].id); const task = project && project.tasks.find(t=>t.id===focus[1].id);
+      if (task){ tgt.textContent = `指示 → タスク #${task.seq}（${task.status==="running"?"追加指示":"引き継ぎ"}）`; show = true; }
+    } else if (st==="project"){
+      tgt.textContent = `指示 → ${focus[0].id}（新規タスク）`; show = true;
+    }
+  }
+  bar.classList.toggle("show", show);
+  // 全幅の指示バーとシェルフ(下部中央)の重なりを避ける
+  $("#shelf").style.display = show ? "none" : "";
+}
+async function sendDirect(){
+  const input = $("#direct-input"); const text = input.value.trim(); if (!text) return;
+  const st = stateName();
+  try{
+    if (st==="task"){
+      const project = PROJECTS.find(p=>p.name===focus[0].id); const task = project && project.tasks.find(t=>t.id===focus[1].id);
+      if (!task) return;
+      if (task.status==="running"){
+        await fetch(`/api/tasks/${task.id}/instructions`, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({text})});
+        addSystem(`⚙ タスク #${task.seq} に追加指示: ${text}`);
+      } else {
+        await fetch("/api/tasks", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({browserSessionId, resume:task.id, instruction:text})});
+        addSystem(`⚙ タスク #${task.seq} を引き継いで指示: ${text}`);
+      }
+    } else if (st==="project"){
+      await fetch("/api/tasks", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({browserSessionId, project:focus[0].id, instruction:text})});
+      addSystem(`⚙ ${focus[0].id} に新規タスク: ${text}`);
+    }
+    input.value=""; refreshData();
+  }catch(err){ addSystem("⚠ 指示の送信に失敗: " + (err && err.message || err)); }
+}
+$("#direct-send").addEventListener("click", sendDirect);
+$("#direct-input").addEventListener("keydown", (e)=>{ if (e.key==="Enter" && !e.isComposing){ e.preventDefault(); sendDirect(); } });
+
+const ORB_R = 38, ORB_C = 2*Math.PI*ORB_R;
+function buildWorld(){
+  const world = $("#world");
+  world.innerHTML = "";
+  for (const k in projectEls) delete projectEls[k];
+  for (const k in taskEls) delete taskEls[k];
+  PROJECTS.forEach((p, pi) => {
+    const btn = document.createElement("button");
+    btn.className = "proj node float";
+    btn.style.animationDelay = (pi*0.6)+"s";
+    btn.dataset.id = p.name;
+    btn.innerHTML = `
+      <div class="orb">
+        <span class="live-ping"></span>
+        <svg viewBox="0 0 84 84"><circle class="track" cx="42" cy="42" r="${ORB_R}"/><circle class="fill c-${p.status}" cx="42" cy="42" r="${ORB_R}" stroke="currentColor" stroke-dasharray="${ORB_C.toFixed(1)}" stroke-dashoffset="${ORB_C.toFixed(1)}"/></svg>
+        <span class="mono">${p.code}</span>
+      </div>
+      <div class="panel">
+        <div class="eyebrow">${p.total} タスク</div>
+        <h3>${escapeHtml(p.name)}</h3>
+        <div class="meta"><span class="dot c-${p.status}"></span><span class="stxt"></span></div>
+        <div class="load">${p.tasks.map(t=>`<i class="${t.status==="succeeded"?"on":""}"></i>`).join("")}</div>
+      </div>`;
+    btn.addEventListener("click", (e)=>{ if (arrangeMode) return; e.stopPropagation(); focusProject(p.name); });
+    attachNodeDrag(btn);
+    world.appendChild(btn);
+    projectEls[p.name] = btn;
+
+    p.tasks.forEach(t => {
+      const tb = document.createElement("button");
+      tb.className = "task node glass";
+      tb.dataset.id = t.id;
+      tb.innerHTML = `
+        <span class="pill ${t.priority==="urgent"?"p-urgent":""}">${t.priority==="urgent"?"緊急 · ":""}${escapeHtml(STATUS_JA[t.status]||t.status)}</span>
+        <h4>${escapeHtml(t.instruction)}</h4>
+        <div class="row"><span>#${t.seq ?? "?"}</span><span>${timeAgo(t.endedAt||t.startedAt)}</span></div>
+        <div class="owner"><span class="avatar">#${t.seq ?? "?"}</span><span class="row">${escapeHtml(p.name)}</span></div>
+        <div class="detail">${escapeHtml(t.result || t.error || t.lastEvent || "（まだ出力はありません）")}</div>`;
+      tb.addEventListener("click", (e)=>{ if (arrangeMode) return; e.stopPropagation(); focusTask(p.name, t.id); });
+      attachNodeDrag(tb);
+      world.appendChild(tb);
+      taskEls[t.id] = tb;
+    });
+  });
+}
+function escapeHtml(s){ return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function updateOrbs(){
+  PROJECTS.forEach(p => {
+    const el = projectEls[p.name]; if (!el) return;
+    const pct = p.total ? p.done/p.total : 0;
+    const fill = el.querySelector("circle.fill");
+    if (fill){ fill.setAttribute("stroke-dashoffset", (ORB_C*(1-pct)).toFixed(1)); fill.setAttribute("class", `fill c-${p.status}`); }
+    el.querySelector(".dot").className = `dot c-${p.status}`;
+    const running = p.running > 0;
+    el.classList.toggle("has-running", running);
+    const stxt = el.querySelector(".stxt");
+    if (stxt) stxt.textContent = running ? `${p.running} 実行中` : (p.total ? `${p.done}/${p.total} 完了` : "タスクなし");
+    if (p.name === activeProject) el.querySelector(".orb").style.boxShadow = "0 14px 30px rgba(0,0,0,.35), 0 0 26px rgba(185,200,255,.28)";
+    else el.querySelector(".orb").style.boxShadow = "";
+  });
+}
+
+/* ============================ 空間レイアウト ============================ */
+// キャリブレーションで指定されたイージング/所要時間を、この描画の間だけ適用する
+let ACTIVE_TRANS = null;
+const EASINGS = {
+  smooth:"cubic-bezier(.16,.84,.32,1)", ease:"ease", linear:"linear",
+  spring:"cubic-bezier(.34,1.56,.64,1)", snap:"cubic-bezier(.5,0,.1,1)",
+};
+function place(el, x, y, z, s, o, b){
+  if (ACTIVE_TRANS){
+    const ez = EASINGS[ACTIVE_TRANS.easing] || EASINGS.smooth;
+    el.style.transition = `transform ${ACTIVE_TRANS.ms}ms ${ez}, opacity .5s ease, filter .5s ease`;
+  } else if (el.style.transition){ el.style.transition = ""; }
+  el.style.setProperty("--x", x.toFixed(1)+"px");
+  el.style.setProperty("--y", y.toFixed(1)+"px");
+  el.style.setProperty("--z", (z||0).toFixed(1)+"px");
+  el.style.setProperty("--s", s);
+  el.style.setProperty("--o", o);
+  el.style.setProperty("--b", (b||0)+"px");
+  el.classList.toggle("is-hidden", o < 0.03);
+}
+/** シーンの transition 設定を ACTIVE_TRANS に反映（描画ブロックの前後で set/clear） */
+function useTrans(sc){ ACTIVE_TRANS = (sc && sc.transition && sc.transition.ms) ? sc.transition : null; }
+
+/** キャリブレーションで記録した経路(軌跡)に沿ってノードを動かす（フォーカス遷移時のみ） */
+function animateAlong(el, pts, w, h, z, s, o, ms, easing){
+  el.style.transition = "none";
+  el.style.setProperty("--z", (z||0)+"px"); el.style.setProperty("--s", s); el.style.setProperty("--o", o); el.style.setProperty("--b","0px");
+  el.classList.remove("is-hidden");
+  const t0 = performance.now();
+  const ease = (t)=> easing==="linear" ? t : easing==="spring" ? (1-Math.pow(1-t,3))+0.06*Math.sin(t*Math.PI) : (1-Math.pow(1-t,3));
+  function frame(now){
+    const k = Math.min(1,(now-t0)/(ms||700)), e = Math.max(0,Math.min(1,ease(k)));
+    const fi = e*(pts.length-1), i = Math.floor(fi), f = fi-i;
+    const a = pts[i], b = pts[Math.min(pts.length-1,i+1)];
+    el.style.setProperty("--x", ((a.x+(b.x-a.x)*f)*w).toFixed(1)+"px");
+    el.style.setProperty("--y", ((a.y+(b.y-a.y)*f)*h).toFixed(1)+"px");
+    if (k < 1) requestAnimationFrame(frame); else el.style.transition = "";
+  }
+  requestAnimationFrame(frame);
+}
+/** シーンにこのノードの経路があり、かつフォーカス遷移直後なら軌跡再生。そうでなければ通常配置。 */
+function placeScene(el, sc, id, fx, fy, w, h, z, s, o){
+  o = (o == null) ? 1 : o;
+  if (focusChanged && sc && sc.paths && sc.paths[id] && sc.paths[id].length > 1){
+    const tr = sc.transition || {};
+    animateAlong(el, sc.paths[id], w, h, z, s, o, tr.ms, tr.easing);
+  } else {
+    place(el, fx, fy, z, s, o, 0);
+  }
+}
+let focusChanged = false, lastFocusKey = null;
+const lerp = (a,b,t)=> a+(b-a)*t;
+function dims(){ const r = $("#stage").getBoundingClientRect(); return {w:r.width, h:r.height, cx:r.width/2, cy:r.height*0.42}; }
+const SHELF_JITTER = [-14,10,-6,4,-10,6];
+
+function focusProject(name){ focus=[{type:"project", id:name}]; switchProject(name); render(); }
+function focusTask(projectName, taskId){ focus=[{type:"project", id:projectName},{type:"task", id:taskId}]; render(); }
+function collapseTo(depth){ focus = focus.slice(0, depth); render(); }
+$("#stage").addEventListener("click", ()=>{ if (arrangeMode) return; if (focus.length) collapseTo(focus.length-1); });
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (!reduceMotion){
+  $("#stage").addEventListener("mousemove", (e)=>{
+    const r = $("#stage").getBoundingClientRect();
+    const rx = ((e.clientY - r.top)/r.height - 0.5) * -3;
+    const ry = ((e.clientX - r.left)/r.width - 0.5) * 4;
+    $("#world").style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+  });
+}
+
+function render(){
+  const {w,h,cx,cy} = dims();
+  const bc = $("#breadcrumb"), shelf = $("#shelf");
+  // フォーカスが変わった描画かどうか（ポーリング再描画では軌跡を再生しない）
+  const fk = JSON.stringify(focus); focusChanged = fk !== lastFocusKey; lastFocusKey = fk;
+  if (!PROJECTS.length){ bc.innerHTML=""; shelf.innerHTML=""; return; }
+
+  if (!focus.length){
+    const scO = sceneFor("overview"); useTrans(scO);
+    PROJECTS.forEach((p,i)=>{
+      const denom = Math.max(1, PROJECTS.length-1);
+      const sp = scO && scO.positions && scO.positions["orb"+(i+1)];
+      const x = sp ? sp.x*w : cx + lerp(-0.32*w, 0.32*w, PROJECTS.length===1?0.5:i/denom);
+      const y = sp ? sp.y*h : cy + (SHELF_JITTER[i%SHELF_JITTER.length]);
+      place(projectEls[p.name], x, y, 0, 1, 1, 0);
+      projectEls[p.name].classList.remove("is-focused");
+      p.tasks.forEach(t => place(taskEls[t.id], x, y, -80, 0.3, 0, 0));
+    });
+    useTrans(null);
+    bc.innerHTML = `<span style="color:var(--ink)">Atrium</span>`;
+    shelf.innerHTML = "";
+  } else if (focus.length === 1){
+    const fid = focus[0].id;
+    const fp = PROJECTS.find(p=>p.name===fid);
+    if (!fp){ collapseTo(0); return; }
+    const others = PROJECTS.filter(p=>p.name!==fid);
+    // キャリブレーション(calibrate.html)で D&D 表現した配置があれば、それに従って動かす
+    const sc = sceneFor("project"); useTrans(sc);
+    const orbP = sc && sc.positions && sc.positions.orb;
+    placeScene(projectEls[fid], sc, "orb", orbP ? orbP.x*w : cx - w*0.16, orbP ? orbP.y*h : cy, w, h, 90, 1);
+    projectEls[fid].classList.add("is-focused");
+    const n = fp.tasks.length;
+    if (n === 0){ /* タスク無し */ }
+    fp.tasks.forEach((t,i)=>{
+      const key = "t"+(i+1);
+      const sp = sc && sc.positions && sc.positions[key];
+      if (sp){ placeScene(taskEls[t.id], sc, key, sp.x*w, sp.y*h, w, h, 20, 1); }
+      else {
+        const y = cy + lerp(-1,1, n===1?0.5:i/(n-1)) * Math.min(h*0.30, 190);
+        place(taskEls[t.id], cx + w*0.24, y, 20, 1, 1, 0);
+      }
+      taskEls[t.id].classList.remove("is-focused");
+    });
+    others.forEach(p => { place(projectEls[p.name], cx, cy, -260, 0.5, 0, 6); p.tasks.forEach(t=>place(taskEls[t.id], cx, cy, -300, 0.3, 0, 6)); });
+    useTrans(null);
+    bc.innerHTML = `<button data-d="0">Atrium</button><span class="sep">/</span><button data-d="1">${escapeHtml(fp.name)}</button>`;
+    renderShelf(others, fid);
+  } else {
+    const project = PROJECTS.find(p=>p.name===focus[0].id);
+    const task = project && project.tasks.find(t=>t.id===focus[1].id);
+    if (!project || !task){ collapseTo(1); return; }
+    // タスク集中の配置もシーンで指定可能（tfocus=集中タスク, orb=プロジェクト, s1/s2=兄弟）
+    const scT = sceneFor("task"); useTrans(scT);
+    const pos = scT && scT.positions || {};
+    placeScene(projectEls[project.name], scT, "orb", pos.orb ? pos.orb.x*w : cx - w*0.30, pos.orb ? pos.orb.y*h : h*0.16, w, h, 10, 0.5);
+    projectEls[project.name].classList.remove("is-focused");
+    placeScene(taskEls[task.id], scT, "tfocus", pos.tfocus ? pos.tfocus.x*w : cx - w*0.02, pos.tfocus ? pos.tfocus.y*h : cy, w, h, 100, 1);
+    taskEls[task.id].classList.add("is-focused");
+    const sib = project.tasks.filter(t=>t.id!==task.id);
+    sib.forEach((t,i)=>{
+      const key = "s"+(i+1);
+      const sp = pos[key];
+      if (sp){ placeScene(taskEls[t.id], scT, key, sp.x*w, sp.y*h, w, h, -40, 0.55, 0.7); }
+      else { const y = cy + lerp(-1,1, sib.length===1?0.5:i/(sib.length-1)) * Math.min(h*0.28,170); place(taskEls[t.id], cx + w*0.30, y, -40, 0.55, 0.7, 2); }
+    });
+    PROJECTS.filter(p=>p.name!==project.name).forEach(p=>{ place(projectEls[p.name], cx, cy, -300, 0.4, 0, 8); p.tasks.forEach(t=>place(taskEls[t.id], cx, cy, -320, 0.3, 0, 8)); });
+    useTrans(null);
+    bc.innerHTML = `<button data-d="0">Atrium</button><span class="sep">/</span><button data-d="1">${escapeHtml(project.name)}</button><span class="sep">/</span><button data-d="2">#${task.seq??""}</button>`;
+    renderShelf(PROJECTS.filter(p=>p.name!==project.name), null);
+  }
+  bc.querySelectorAll("button").forEach(b=> b.addEventListener("click",(e)=>{ e.stopPropagation(); collapseTo(Number(b.dataset.d)); }));
+  updateDirectBar();
+}
+function renderShelf(projects){
+  const shelf = $("#shelf"); shelf.innerHTML = "";
+  projects.forEach(p=>{
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.innerHTML = `<div class="eyebrow"><span class="dot c-${p.status}" style="display:inline-block;"></span>${p.total} タスク</div><h5>${escapeHtml(p.name)}</h5>`;
+    chip.addEventListener("click",(e)=>{ e.stopPropagation(); focusProject(p.name); });
+    shelf.appendChild(chip);
+  });
+}
+function renderNotifs(tasks){
+  const stack = $("#notif-stack"); stack.innerHTML = "";
+  const review = tasks.filter(t => t.status==="failed").slice(0,4);
+  review.forEach(t=>{
+    const el = document.createElement("button");
+    el.className = "notif";
+    el.innerHTML = `<span class="dot"></span><p>${escapeHtml((t.priority==="urgent"?"緊急 · ":"") + "失敗 — " + t.project + " #" + (t.seq??""))}</p>`;
+    el.addEventListener("click",(e)=>{ e.stopPropagation(); focusTask(t.project, t.id); });
+    stack.appendChild(el);
+  });
+}
+
+async function switchProject(name){
+  if (name === activeProject) return;
+  try{
+    const res = await fetch("/api/workspace", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ browserSessionId, project:name }) });
+    if (res.ok){ activeProject = name; updateOrbs(); }  /* 切替はオーブの発光で示す（バブルは出さない） */
+  }catch(e){}
+}
+window.addEventListener("resize", render);
+
+/* ============================ チャット（会話レーン） ============================ */
+const msgsEl = $("#msgs");
+let ttsOn = $("#tts-on").checked;
+$("#tts-on").addEventListener("change", (e)=>{ ttsOn = e.target.checked; if (!ttsOn) speechSynthesis.cancel(); });
+
+function clearEmpty(){ const e = msgsEl.querySelector(".empty"); if (e) e.remove(); }
+function addBubble(role, text, opts={}){
+  clearEmpty();
+  const div = document.createElement("div");
+  div.className = "bubble " + role;
+  if (role === "interjection") div.innerHTML = `<span class="tag">割り込み</span>`;
+  const p = document.createElement("span"); p.textContent = text; div.appendChild(p);
+  msgsEl.appendChild(div);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return { el: div, body: p };
+}
+function addSystem(text){ addBubble("system", text); }
+
+/* SSE をパースしてストリーミング表示。/api/chat は useChat と同じ delta/directive/done/error を送る */
+async function sendMessage(message){
+  const clean = String(message).trim(); if (!clean) return;
+  interruptChat();                       // 進行中があれば打ち切る（緊急/割り込み）
+  const controller = new AbortController();
+  activeChatAbort = controller;
+  addBubble("user", clean);
+  const asst = addBubble("assistant", "…");
+  let firstDelta = true, finalText = "";
+  try{
+    const res = await fetch("/api/chat", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify({ browserSessionId, message: clean }), signal: controller.signal });
+    if (!res.ok || !res.body) throw new Error("HTTP "+res.status);
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    for(;;){
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream:true });
+      const blocks = buf.split("\n\n"); buf = blocks.pop() ?? "";
+      for (const block of blocks){
+        const ev = /^event: (.*)$/m.exec(block)?.[1];
+        const dataRaw = /^data: (.*)$/m.exec(block)?.[1];
+        if (!ev || dataRaw === undefined) continue;
+        let data; try{ data = JSON.parse(dataRaw); }catch{ continue; }
+        if (ev === "delta"){ if (firstDelta){ asst.body.textContent=""; firstDelta=false; } asst.body.textContent += data.text; msgsEl.scrollTop = msgsEl.scrollHeight; }
+        else if (ev === "directive"){ if (data.detail) addSystem((data.ok?"⚙ ":"⚠ ")+data.detail); refreshData(); }
+        else if (ev === "done"){ finalText = data.text || asst.body.textContent; asst.body.textContent = finalText; }
+        else if (ev === "error"){ asst.body.textContent = "エラー: " + (data.message||""); }
+      }
+    }
+    if (finalText) speak(finalText);
+    refreshData();
+  }catch(err){
+    if (controller.signal.aborted){ /* 割り込まれただけ */ }
+    else asst.body.textContent = "接続エラー: " + (err && err.message || err);
+  }finally{
+    if (activeChatAbort === controller) activeChatAbort = null;
+  }
+}
+let activeChatAbort = null;
+function interruptChat(){ if (activeChatAbort) activeChatAbort.abort(); }
+
+/* ---- 発話ディスパッチキュー（通常は直列・緊急は割り込み） ---- */
+const isUrgent = (t)=> CVIntent.classify(t, CFG, projNames()).urgency === "urgent";
+let queue = [], pumping = false, qid = 0;
+function renderQueue(){
+  const strip = $("#queue-strip");
+  strip.classList.toggle("show", queue.length>0);
+  $("#qcount").textContent = queue.length;
+  $("#qitems").innerHTML = queue.map(q=>`<span class="qitem ${q.urgent?"urgent":""}"><span class="qtext">${escapeHtml(q.text)}</span></span>`).join("");
+}
+function enqueue(text){
+  syncViewFromUtterance(text);   // 「タスク1が…」等の言及に合わせて空間表示も動かす
+  const item = { id:++qid, text, urgent:isUrgent(text) };
+  if (item.urgent){ const i = queue.findIndex(q=>!q.urgent); if (i===-1) queue.push(item); else queue.splice(i,0,item); interruptChat(); }
+  else queue.push(item);
+  renderQueue(); pump();
+}
+
+/* ---- 発話に含まれるタスク番号/プロジェクト名/「戻して」に合わせて空間の焦点を移す。
+       判定は共有の CVIntent（calibrate.html で調整可能）に委ねる。 ---- */
+function syncViewFromUtterance(text){
+  const v = CVIntent.classify(text, CFG, projNames()).view;
+  if (v.action === "collapse"){ collapseTo(0); return; }
+  if (v.action === "task"){
+    const task = ALL_TASKS.find(x => Number(x.seq) === Number(v.seq));
+    if (task){ focusTask(task.projectName, task.id); return; }
+  }
+  if (v.action === "project" && !(focus[0] && focus[0].id === v.project)){ focusProject(v.project); }
+}
+async function pump(){
+  if (pumping) return; pumping = true;
+  try{ while (queue.length){ const it = queue.shift(); renderQueue(); await sendMessage(it.text); } }
+  finally{ pumping = false; }
+}
+
+/* ---- テキスト送信 ---- */
+const draftEl = $("#draft"), sendBtn = $("#send");
+draftEl.addEventListener("input", ()=> sendBtn.disabled = !draftEl.value.trim());
+function submitDraft(){ const v = draftEl.value.trim(); if (!v) return; speechSynthesis.cancel(); enqueue(v); draftEl.value=""; sendBtn.disabled=true; }
+sendBtn.addEventListener("click", submitDraft);
+draftEl.addEventListener("keydown", (e)=>{ if (e.key==="Enter" && !e.isComposing){ e.preventDefault(); submitDraft(); } });
+
+/* ---- TTS ---- */
+function clipForSpeech(t){ const s = String(t); if (s.length <= 220) return s; const cut = s.slice(0,220); const p = Math.max(cut.lastIndexOf("。"), cut.lastIndexOf("."), cut.lastIndexOf("\n")); return (p>60?cut.slice(0,p+1):cut) + " 以下略"; }
+function speak(text){ if (!ttsOn || !("speechSynthesis" in window)) return; try{ speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(clipForSpeech(text)); u.lang="ja-JP"; u.rate = Number($("#rate").value)||1.2; speechSynthesis.speak(u); }catch(e){} }
+
+/* ---- 音声認識（Web Speech） ---- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = $("#mic"), liveStrip = $("#live-strip"), liveLabel = $("#live-label"), liveText = $("#live-text");
+let rec = null, listening = false, draftSpeech = "", finalsSeen = "", silenceTimer = null;
+const AUTO_SEND_MS = 2000;
+
+function setLive(){ liveText.innerHTML = `${escapeHtml(draftSpeech)}${curInterim?`<span class="interim"> ${escapeHtml(curInterim)}</span>`:""}`; }
+let curInterim = "";
+
+function detectSend(text){ const s = CVIntent.classify(text, CFG, projNames()).send; return s.triggered ? s.body : null; }
+
+function armAutoSend(){ if (silenceTimer) clearTimeout(silenceTimer); if (draftSpeech.trim()) silenceTimer = setTimeout(()=>{ flushSpeech(); }, CFG.autoSendMs || AUTO_SEND_MS); }
+function flushSpeech(){ const t = draftSpeech.trim(); resetSpeech(); if (t) enqueue(t); }
+function resetSpeech(){ draftSpeech=""; finalsSeen=""; curInterim=""; if (silenceTimer){ clearTimeout(silenceTimer); silenceTimer=null; } setLive(); }
+
+function startRec(){
+  if (!SR){ addSystem("⚠ このブラウザは音声認識に非対応です。Chromeをお使いください。"); return; }
+  rec = new SR(); rec.lang="ja-JP"; rec.continuous=true; rec.interimResults=true;
+  rec.onresult = (e)=>{
+    let interim = "", finals = "";
+    for (let i=e.resultIndex; i<e.results.length; i++){ const r=e.results[i]; if (r.isFinal) finals += r[0].transcript; else interim += r[0].transcript; }
+    if (speechSynthesis.speaking && finals.trim()) speechSynthesis.cancel(); // バージイン
+    if (finals){ draftSpeech = (draftSpeech + finals).trim(); finalsSeen += finals; }
+    curInterim = interim; setLive();
+    const whole = (draftSpeech + interim);
+    const cmd = detectSend(whole);
+    if (cmd){ if (silenceTimer) clearTimeout(silenceTimer); draftSpeech = cmd; flushSpeech(); return; }
+    if (finals) armAutoSend();
+  };
+  rec.onend = ()=>{ if (listening){ try{ rec.start(); }catch(e){} } };
+  rec.onerror = ()=>{};
+  try{ rec.start(); listening=true; micBtn.classList.add("on"); micBtn.textContent="■"; liveStrip.classList.add("on-air"); liveLabel.textContent="ON AIR"; }
+  catch(e){}
+}
+function stopRec(){ listening=false; if (rec){ try{ rec.stop(); }catch(e){} } micBtn.classList.remove("on"); micBtn.textContent="●"; liveStrip.classList.remove("on-air"); liveLabel.textContent="OFF"; }
+micBtn.addEventListener("click", ()=>{ if (listening) stopRec(); else startRec(); });
+
+/* ============================ 視線トラッキング（カメラ→視線の先のタスク/プロジェクト） ============================ */
+/* WebGazer(ローカルvendor)でwebカメラから注視点(x,y)を推定し、そこにポインターを置き、
+   視線の先にある .proj / .task をハイライト＋ラベル表示。1.5秒の注視でその対象へフォーカス。 */
+let gazeOn = false, gazePointer = null, gazeHud = null, gazeRAF = 0;
+const gaze = { x: innerWidth/2, y: innerHeight/2 };
+let gazeSmooth = null, currentGazed = null;
+const dwell = { el: null, since: 0, activated: false };
+const DWELL_MS = 1500;
+const gazeBtn = $("#gaze-btn");
+
+// 頭部ヨー(左右振り)検出。左右を見るとき頭が少し振れるのを検知し、ポインター横位置に加える。
+let headAssist = true, yawGain = 0.30, yawEma = null, yawNeutral = 0, lastYaw = 0, headInd = null, gazeCtl = null;
+// 精度向上: 注視点に最も近いオブジェクトへ吸着(magnet)。外れ値に強い中央値バッファ。
+let magnet = 0.55;
+const rawBuf = [];   // 直近の生の注視点（中央値フィルタ用）
+try { const g = JSON.parse(localStorage.getItem("cv-gaze") || "null"); if (g){ if (typeof g.headAssist === "boolean") headAssist = g.headAssist; if (typeof g.yawGain === "number") yawGain = g.yawGain; if (typeof g.magnet === "number") magnet = g.magnet; } } catch(e){}
+function saveGazeSettings(){ try{ localStorage.setItem("cv-gaze", JSON.stringify({ headAssist, yawGain, magnet })); }catch(e){} }
+const median = (arr)=>{ const a = arr.slice().sort((p,q)=>p-q); const m = a.length>>1; return a.length%2 ? a[m] : (a[m-1]+a[m])/2; };
+
+function ensureWebgazer(){
+  return new Promise((res, rej)=>{
+    if (window.webgazer) return res();
+    const s = document.createElement("script");
+    s.src = "/vendor/webgazer.js"; s.async = true;
+    s.onload = ()=> res();
+    s.onerror = ()=> rej(new Error("webgazer.js の読み込みに失敗"));
+    document.head.appendChild(s);
+  });
+}
+function ensureGazeEls(){
+  if (!gazePointer){
+    gazePointer = document.createElement("div"); gazePointer.id = "gaze-pointer";
+    gazePointer.innerHTML = `<div class="ring"></div><div class="core"></div>`;
+    document.body.appendChild(gazePointer);
+  }
+  if (!gazeHud){ gazeHud = document.createElement("div"); gazeHud.id = "gaze-hud"; document.body.appendChild(gazeHud); }
+}
+function setPointerProgress(p){
+  if (!gazePointer) return;
+  gazePointer.querySelector(".ring").style.background = `conic-gradient(var(--accent) ${Math.round(p*360)}deg, transparent 0deg)`;
+}
+async function toggleGaze(){
+  if (gazeOn){ stopGaze(); return; }
+  gazeBtn.classList.add("on"); gazeBtn.textContent = "…";
+  try{
+    await ensureWebgazer();
+    ensureGazeEls();
+    webgazer.setRegression("ridge");
+    if (webgazer.applyKalmanFilter) webgazer.applyKalmanFilter(true);   // 内蔵Kalmanで更に平滑化
+    webgazer.showVideoPreview(true).showPredictionPoints(false).showFaceOverlay(false).showFaceFeedbackBox(false);
+    webgazer.setGazeListener((data)=>{ if (data) onGaze(data.x, data.y); });
+    await webgazer.begin();
+    gazeOn = true; gazeBtn.textContent = "👁";
+    addSystem("⚙ 視線トラッキング開始。精度を上げるため、表示される点を見ながらクリックしてください。頭の左右の振りも検知します（左下で調整）。");
+    ensureHeadUI();
+    startCalibration();
+    loopGaze();
+  }catch(e){
+    gazeBtn.classList.remove("on"); gazeBtn.textContent = "👁";
+    addSystem("⚠ 視線トラッキングを開始できませんでした: " + (e && e.message || e) + "（カメラ権限とHTTPS/localhostが必要です）");
+  }
+}
+function stopGaze(){
+  gazeOn = false; gazeBtn.classList.remove("on"); gazeBtn.textContent = "👁";
+  cancelAnimationFrame(gazeRAF);
+  try{ webgazer.clearGazeListener(); webgazer.end(); }catch(e){}
+  if (gazePointer) gazePointer.style.display = "none";
+  if (gazeHud) gazeHud.style.display = "none";
+  if (headInd) headInd.style.display = "none";
+  if (gazeCtl) gazeCtl.style.display = "none";
+  clearGazed();
+  const cal = $("#gaze-calib"); if (cal) cal.remove();
+  addSystem("⚙ 視線トラッキングを停止しました");
+}
+function onGaze(x, y){
+  // 1) 中央値フィルタ: WebGazerのスパイク(飛び)を除去
+  rawBuf.push({ x, y }); if (rawBuf.length > 7) rawBuf.shift();
+  const mx = median(rawBuf.map(p=>p.x)), my = median(rawBuf.map(p=>p.y));
+  // 2) EMA: 残るジッタを平滑化
+  if (!gazeSmooth) gazeSmooth = { x: mx, y: my };
+  else { const a = 0.35; gazeSmooth.x += (mx - gazeSmooth.x)*a; gazeSmooth.y += (my - gazeSmooth.y)*a; }
+  gaze.x = gazeSmooth.x; gaze.y = gazeSmooth.y;
+}
+function clearGazed(){ if (currentGazed){ currentGazed.classList.remove("gazed"); currentGazed = null; } dwell.el = null; dwell.activated = false; }
+
+/* --- 頭部ヨー(左右振り)推定: FaceMesh 468点から。3D(z)があれば左右頬の深度差、無ければ鼻の左右非対称で近似。[-1,1] --- */
+function landmark(P, i){ const p = P && P[i]; if (!p) return null; return Array.isArray(p) ? { x:p[0], y:p[1], z:p[2] } : { x:p.x, y:p.y, z:p.z }; }
+function computeYaw(P){
+  if (!P || P.length < 468) return null;
+  const nose = landmark(P, 1), L = landmark(P, 234), R = landmark(P, 454);
+  if (!nose || !L || !R) return null;
+  if (typeof L.z === "number" && typeof R.z === "number" && (L.z || R.z)){
+    const dx = Math.abs(R.x - L.x) || 1;              // 左右頬の深度差 → ヨー（3D）
+    return Math.max(-1, Math.min(1, ((R.z - L.z) / dx) * 2));
+  }
+  const mid = (L.x + R.x) / 2, half = Math.abs(R.x - L.x) / 2 || 1;  // 鼻の左右非対称（2D近似）
+  return Math.max(-1, Math.min(1, (nose.x - mid) / half));
+}
+function currentYaw(){ try{ return computeYaw(webgazer.getTracker().getPositions()); }catch(e){ return null; } }
+function readYaw(){ const y = currentYaw(); if (y == null) return null; yawEma = (yawEma == null) ? y : yawEma + (y - yawEma) * 0.4; return yawEma - yawNeutral; }
+function captureNeutral(ms){
+  const t0 = performance.now(); let sum = 0, n = 0;
+  (function samp(){ const y = currentYaw(); if (y != null){ sum += y; n++; }
+    if (performance.now() - t0 < ms) requestAnimationFrame(samp); else if (n){ yawNeutral = sum / n; yawEma = yawNeutral; } })();
+}
+function ensureHeadUI(){
+  if (!headInd){ headInd = document.createElement("div"); headInd.id = "head-ind"; headInd.innerHTML = `<span class="ax"></span><span class="mk"></span>`; document.body.appendChild(headInd); }
+  if (!gazeCtl){
+    gazeCtl = document.createElement("div"); gazeCtl.id = "gaze-ctl";
+    gazeCtl.innerHTML = `<label><input type="checkbox" id="ga-head"${headAssist ? " checked" : ""}> 頭アシスト</label>
+      <span class="s"><span class="l">感度</span><input type="range" id="ga-gain" min="0.05" max="0.6" step="0.01" value="${yawGain}"></span>
+      <span class="s"><span class="l">吸着</span><input type="range" id="ga-magnet" min="0" max="0.85" step="0.05" value="${magnet}"></span>
+      <button id="ga-center">正面較正</button>
+      <button id="ga-recal">視線を再較正</button>`;
+    document.body.appendChild(gazeCtl);
+    gazeCtl.querySelector("#ga-head").addEventListener("change", e=>{ headAssist = e.target.checked; saveGazeSettings(); if (!headAssist && headInd) headInd.style.display="none"; });
+    gazeCtl.querySelector("#ga-gain").addEventListener("input", e=>{ yawGain = Number(e.target.value); saveGazeSettings(); });
+    gazeCtl.querySelector("#ga-magnet").addEventListener("input", e=>{ magnet = Number(e.target.value); saveGazeSettings(); });
+    gazeCtl.querySelector("#ga-center").addEventListener("click", ()=>{ captureNeutral(1000); addSystem("⚙ 正面を較正しました（頭の中立位置を記録）"); });
+    gazeCtl.querySelector("#ga-recal").addEventListener("click", ()=>{ startCalibration(); });
+  }
+  gazeCtl.style.display = "flex";
+}
+function updateHeadInd(yr){
+  if (!headInd) return;
+  headInd.style.display = "block";
+  const p = Math.max(-1, Math.min(1, yr / 0.5));
+  headInd.querySelector(".mk").style.left = (50 + p * 46) + "%";
+  const TH = 0.1;
+  headInd.classList.toggle("left", yr < -TH);
+  headInd.classList.toggle("right", yr > TH);
+}
+
+function nodeCenter(el){ const r = el.getBoundingClientRect(); return { cx: r.left + r.width/2, cy: r.top + r.height/2 }; }
+/* 精度向上の要: 注視点が中に無くても、最も近い可視オブジェクトを対象にする（半径内）。 */
+function pickGazeTarget(x, y){
+  const el = document.elementFromPoint(x, y);
+  const hit = el && el.closest ? el.closest(".proj:not(.is-hidden), .task:not(.is-hidden)") : null;
+  if (hit){ const c = nodeCenter(hit); return { node: hit, cx: c.cx, cy: c.cy, dist: 0 }; }
+  const R = 0.20 * Math.min(innerWidth, innerHeight);
+  let best = null;
+  document.querySelectorAll(".proj:not(.is-hidden), .task:not(.is-hidden)").forEach(n=>{
+    const c = nodeCenter(n); const d = Math.hypot(c.cx - x, c.cy - y);
+    if (d < R && (!best || d < best.dist)) best = { node: n, cx: c.cx, cy: c.cy, dist: d };
+  });
+  return best;
+}
+function loopGaze(){
+  gazeRAF = requestAnimationFrame(loopGaze);
+  if (!gazeOn) return;
+  let x = gaze.x, y = gaze.y;
+  // 頭の左右振りを検知して、視線の横位置に加える（左右を見るときの頭の動きを拾う）
+  if (headAssist){ const yr = readYaw(); if (yr != null){ lastYaw = yr; x = Math.max(6, Math.min(innerWidth - 6, x + yr * yawGain * innerWidth)); updateHeadInd(yr); } }
+  // 最も近いオブジェクトを対象にし、ポインターをその中心へ吸着（誤差があっても対象が定まる）
+  const target = pickGazeTarget(x, y);
+  if (target && magnet > 0){ x += (target.cx - x) * magnet; y += (target.cy - y) * magnet; }
+  if (gazePointer){ gazePointer.style.display = "block"; gazePointer.style.left = x+"px"; gazePointer.style.top = y+"px"; }
+  highlightGazed(target ? target.node : null, x, y);
+}
+function gazeLabel(node){
+  if (node.classList.contains("proj")) return { k:"PROJECT", t: node.dataset.id };
+  const task = ALL_TASKS.find(t => t.id === node.dataset.id);
+  return { k:"TASK", t: task ? `#${task.seq} · ${task.instruction.slice(0,26)}` : "タスク" };
+}
+function highlightGazed(node, x, y){
+  if (currentGazed && currentGazed !== node) currentGazed.classList.remove("gazed");
+  if (!node){ currentGazed = null; if (gazeHud) gazeHud.style.display = "none"; dwell.el = null; dwell.activated = false; setPointerProgress(0); return; }
+  node.classList.add("gazed"); currentGazed = node;
+  const { k, t } = gazeLabel(node);
+  if (gazeHud){
+    gazeHud.innerHTML = `<span class="k">${k}</span>${escapeHtml(t)}`;
+    gazeHud.style.display = "block";
+    // ポインターの少し上に出す（画面端で見切れないよう調整）
+    const hw = gazeHud.offsetWidth || 160;
+    gazeHud.style.left = Math.max(8, Math.min(innerWidth - hw - 8, x - hw/2)) + "px";
+    gazeHud.style.top = Math.max(8, y - 44) + "px";
+  }
+  handleDwell(node);
+}
+function handleDwell(node){
+  const now = performance.now();
+  if (dwell.el !== node){ dwell.el = node; dwell.since = now; dwell.activated = false; }
+  if (dwell.activated){ setPointerProgress(1); return; }
+  const held = now - dwell.since;
+  setPointerProgress(Math.min(1, held / DWELL_MS));
+  if (held >= DWELL_MS){ dwell.activated = true; activateGazed(node); }
+}
+function activateGazed(node){
+  if (node.classList.contains("proj")) focusProject(node.dataset.id);
+  else { const t = ALL_TASKS.find(x => x.id === node.dataset.id); if (t) focusTask(t.projectName, t.id); }
+}
+/* クリックで学習させる簡易キャリブレーション（WebGazerはクリック位置で回帰を訓練する） */
+function startCalibration(){
+  const old = $("#gaze-calib"); if (old) old.remove();
+  const layer = document.createElement("div"); layer.id = "gaze-calib";
+  const pts = [[0.1,0.12],[0.5,0.12],[0.9,0.12],[0.1,0.5],[0.5,0.5],[0.9,0.5],[0.1,0.88],[0.5,0.88],[0.9,0.88]];
+  let remaining = pts.length;
+  const msg = document.createElement("div"); msg.className = "msg";
+  msg.innerHTML = `点を見つめながらクリックしてください（残り <b id="calib-n">${remaining}</b>）。<br><button class="btn" id="calib-skip">スキップ</button>`;
+  layer.appendChild(msg);
+  pts.forEach(([fx,fy])=>{
+    const d = document.createElement("div"); d.className = "calib-dot";
+    d.style.left = (fx*innerWidth)+"px"; d.style.top = (fy*innerHeight)+"px";
+    let clicks = 0;
+    d.addEventListener("click", ()=>{
+      clicks++; if (clicks < 2){ d.style.transform = "scale(.8)"; return; } // 2回クリックで学習を強める
+      d.classList.add("done"); d.style.pointerEvents = "none"; remaining--;
+      const n = $("#calib-n"); if (n) n.textContent = remaining;
+      if (remaining <= 0){ layer.remove(); addSystem("⚙ 視線キャリブレーション完了。正面を見て頭の中立位置を較正します…"); captureNeutral(1200); }
+    });
+    layer.appendChild(d);
+  });
+  document.body.appendChild(layer);
+  $("#calib-skip").addEventListener("click", ()=>{ layer.remove(); captureNeutral(1200); });
+}
+if (gazeBtn) gazeBtn.addEventListener("click", toggleGaze);
+// 手動テスト用フック（カメラ無しでもハイライト経路/ヨー計算を検証できる）
+window.__gaze = { onGaze, highlightGazed, loopGaze, ensureGazeEls, ensureHeadUI, gazeLabel, computeYaw, updateHeadInd, pickGazeTarget,
+  setNeutral:(v)=>{ yawNeutral = v; }, getYaw:()=>lastYaw, getGaze:()=>({x:gaze.x,y:gaze.y}),
+  state:()=>({gazeOn, headAssist, yawGain, magnet, gazed: currentGazed && (currentGazed.dataset.id)}) };
+
+/* ============================ 起動 ============================ */
+(async function init(){
+  try{ const h = await (await fetch("/api/health")).json(); mode = h.mode || "?"; }catch(e){ mode="offline"; }
+  const badge = $("#mode-badge");
+  badge.textContent = mode === "cli" ? "Claude Code接続" : mode === "mock" ? "モックモード" : mode;
+  badge.className = mode === "cli" ? "cli" : "";
+  await refreshData();
+  setInterval(refreshData, 3000);
+})();
+</script>
+</body>
+</html>

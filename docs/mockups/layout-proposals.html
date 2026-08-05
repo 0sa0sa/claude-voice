@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>claude-voice — 会話UI レイアウト比較モックアップ</title>
+<style>
+  :root {
+    --bg: #0b0e1a;
+    --bg-raise: #141a30;
+    --ink: #e8ebf7;
+    --ink-dim: #8891b4;
+    --accent: #6c7bf5;
+    --accent-glow: #56e6ff;
+    --user-blue: #86a8e8;
+    --amber: #e8b34b;
+    --ok: #7ec97f;
+    --err: #e06c5b;
+    --clarify: #c98bf0;
+    --line: #262c4a;
+    --mono: "JetBrains Mono", "Fira Code", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
+      radial-gradient(ellipse 700px 500px at 100% 0%, color-mix(in srgb, var(--accent-glow) 7%, transparent), transparent),
+      var(--bg);
+    color: var(--ink);
+    min-height: 100%;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* ツール自体のクロム(比較UI側)                                    */
+  /* ---------------------------------------------------------------- */
+
+  .page {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  .page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 18px;
+    margin-bottom: 22px;
+  }
+
+  .page-head h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .page-head h1 .mark { color: var(--accent); }
+
+  .page-head .sub {
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    line-height: 1.7;
+    max-width: 640px;
+  }
+
+  .page-head .sub strong { color: var(--amber); font-weight: 600; }
+
+  .view-toggle {
+    display: flex;
+    gap: 6px;
+    background: var(--bg-raise);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px;
+    flex-shrink: 0;
+  }
+
+  .view-toggle button {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-dim);
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    padding: 7px 16px;
+    cursor: pointer;
+  }
+
+  .view-toggle button.is-active {
+    background: var(--accent);
+    color: #0b0e1a;
+    font-weight: 700;
+  }
+
+  .pattern-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+
+  .pattern-tabs button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    background: var(--bg-raise);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 14px;
+    color: var(--ink-dim);
+    cursor: pointer;
+    text-align: left;
+    min-width: 128px;
+  }
+
+  .pattern-tabs button .label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: inherit;
+  }
+
+  .pattern-tabs button .hint {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    opacity: 0.75;
+  }
+
+  .pattern-tabs button.is-active {
+    border-color: color-mix(in srgb, var(--accent-glow) 55%, var(--line));
+    color: var(--ink);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-glow) 30%, transparent);
+  }
+
+  .pattern-tabs button.is-active .label { color: var(--accent-glow); }
+
+  .stage[data-view="grid"] .pattern-tabs { display: none; }
+
+  /* ---------------------------------------------------------------- */
+  /* stage: 案の表示エリア                                            */
+  /* ---------------------------------------------------------------- */
+
+  .stage[data-view="single"] .pattern-block { display: none; }
+
+  .stage[data-view="single"] .pattern-block.is-active {
+    display: flex;
+    align-items: flex-start;
+    gap: 26px;
+  }
+
+  .stage[data-view="single"] .pattern-block.is-active .frame-wrap {
+    flex: 1 1 760px;
+    min-width: 0;
+  }
+
+  .stage[data-view="single"] .pattern-block.is-active .pattern-desc {
+    flex: 0 0 300px;
+  }
+
+  .stage[data-view="grid"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 22px;
+  }
+
+  .stage[data-view="grid"] .pattern-block {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .stage[data-view="grid"] .pattern-desc .full { display: none; }
+  .stage[data-view="single"] .pattern-desc .grid-only { display: none; }
+
+  .browser-chrome-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+
+  .frame-wrap {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 12px;
+  }
+
+  .device-frame {
+    width: 1240px;
+    height: 760px;
+    transform-origin: top left;
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 0 0 1px var(--line), 0 30px 70px rgba(0, 0, 0, 0.55);
+    background:
+      radial-gradient(ellipse 700px 400px at 12% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent),
+      radial-gradient(ellipse 600px 400px at 100% 0%, color-mix(in srgb, var(--accent-glow) 8%, transparent), transparent),
+      var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .device-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--accent-glow) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--accent-glow) 6%, transparent) 1px, transparent 1px);
+    background-size: 38px 38px;
+    mask-image: radial-gradient(ellipse 85% 70% at 50% 0%, #000 40%, transparent 92%);
+    opacity: 0.7;
+  }
+
+  .mm-particle {
+    position: absolute;
+    bottom: -6px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--accent-glow);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent-glow) 80%, transparent);
+    opacity: 0;
+    animation: mm-particle-rise 13s ease-in infinite;
+  }
+  .mm-particle:nth-child(2) { left: 12%; animation-duration: 15s; animation-delay: 0s; }
+  .mm-particle:nth-child(3) { left: 34%; animation-duration: 11s; animation-delay: 3s; }
+  .mm-particle:nth-child(4) { left: 58%; animation-duration: 17s; animation-delay: 6s; }
+  .mm-particle:nth-child(5) { left: 76%; animation-duration: 12s; animation-delay: 1.5s; }
+  .mm-particle:nth-child(6) { left: 92%; animation-duration: 16s; animation-delay: 8s; }
+
+  @keyframes mm-particle-rise {
+    0% { transform: translateY(0); opacity: 0; }
+    8% { opacity: 0.5; }
+    90% { opacity: 0.22; }
+    100% { transform: translateY(-720px); opacity: 0; }
+  }
+
+  .stage[data-view="grid"] .mm-particle { display: none; }
+
+  /* 偽ブラウザバー(モックアップであることが一目で分かるように) */
+  .mm-browserbar {
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    background: color-mix(in srgb, var(--bg-raise) 80%, black);
+    border-bottom: 1px solid var(--line);
+  }
+  .mm-dots { display: flex; gap: 5px; }
+  .mm-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .mm-url {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-dim);
+    background: var(--bg);
+    border-radius: 5px;
+    padding: 2px 10px;
+    flex: 1;
+    max-width: 300px;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 共通モックコンポーネント (mm- prefix)                            */
+  /* ---------------------------------------------------------------- */
+
+  .mm-header {
+    height: 50px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+  }
+  .mm-brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; letter-spacing: 0.03em; }
+  .mm-brand .mark { color: var(--accent); font-size: 15px; }
+  .mm-badges { display: flex; align-items: center; gap: 10px; }
+  .mm-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px 9px;
+    color: var(--ink-dim);
+  }
+  .mm-badge.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .mm-toggle-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 10px;
+    color: var(--ink-dim);
+    background: transparent;
+  }
+  .mm-toggle-btn.is-on { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+
+  .mm-projects {
+    width: 190px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--line);
+    padding: 12px 8px;
+    overflow: hidden;
+  }
+  .mm-proj-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; color: var(--ink-dim); margin: 0 6px 10px; }
+  .mm-proj-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; font-size: 12px; color: var(--ink-dim); margin-bottom: 2px; }
+  .mm-proj-row.active { background: var(--bg-raise); color: var(--ink); }
+  .mm-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .mm-count { margin-left: auto; font-family: var(--mono); font-size: 9px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-radius: 999px; padding: 1px 6px; }
+
+  .mm-proj-rail { width: 52px; flex-shrink: 0; border-right: 1px solid var(--line); padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .mm-rail-icon { width: 32px; height: 32px; border-radius: 9px; background: var(--bg-raise); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--ink-dim); position: relative; }
+  .mm-rail-icon.active { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .mm-rail-icon .dot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+  .mm-chip-bar { display: flex; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .mm-chip { font-family: var(--mono); font-size: 10px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; color: var(--ink-dim); }
+  .mm-chip.active { color: var(--user-blue); border-color: color-mix(in srgb, var(--user-blue) 45%, transparent); background: color-mix(in srgb, var(--user-blue) 12%, transparent); }
+
+  .mm-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 18px 22px; overflow: hidden; }
+  .mm-chat.centered { max-width: 660px; margin: 0 auto; width: 100%; }
+  .mm-bubble { max-width: 78%; padding: 9px 13px; border-radius: 12px; font-size: 12px; line-height: 1.65; }
+  .mm-bubble.user { align-self: flex-end; background: color-mix(in srgb, var(--user-blue) 16%, var(--bg-raise)); border: 1px solid color-mix(in srgb, var(--user-blue) 30%, transparent); }
+  .mm-bubble.assistant { align-self: flex-start; background: var(--bg-raise); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+  .mm-bubble.interjection { align-self: flex-start; font-size: 11px; background: color-mix(in srgb, var(--amber) 12%, var(--bg-raise)); border: 1px dashed color-mix(in srgb, var(--amber) 50%, transparent); }
+  .mm-bubble.mini { font-size: 11px; padding: 7px 10px; max-width: 92%; }
+
+  .mm-dock { border-top: 1px solid var(--line); padding: 12px 22px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .mm-mic { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--accent); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .mm-mic.small { width: 28px; height: 28px; font-size: 10px; }
+  .mm-live { flex: 1; min-width: 0; background: var(--bg-raise); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 11px; color: var(--ink-dim); }
+
+  .mm-tasks { width: 270px; flex-shrink: 0; border-left: 1px solid var(--line); padding: 12px 10px; overflow: hidden; }
+  .mm-tasks-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; color: var(--ink-dim); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .mm-task { background: var(--bg-raise); border: 1px solid var(--line); border-radius: 8px 8px 8px 2px; padding: 8px 10px; margin-bottom: 8px; }
+  .mm-task.running { border-left: 3px solid var(--accent); }
+  .mm-task.succeeded { border-left: 3px solid var(--ok); }
+  .mm-task.failed { border-left: 3px solid var(--err); }
+  .mm-seq { display: inline-block; font-weight: 800; font-size: 10px; color: var(--bg); background: var(--accent-glow); border-radius: 5px; padding: 1px 6px; margin-right: 6px; }
+  .mm-task-meta { font-family: var(--mono); font-size: 9px; color: var(--ink-dim); display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .mm-task-title { font-size: 11px; line-height: 1.4; }
+  .mm-state { padding: 1px 6px; border-radius: 999px; font-weight: 600; }
+  .mm-state.running { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .mm-state.succeeded { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+  .mm-state.failed { background: color-mix(in srgb, var(--err) 16%, transparent); color: var(--err); }
+
+  .mm-task-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start; }
+  .mm-task-grid .mm-task { margin-bottom: 0; padding: 12px 14px; }
+  .mm-task-grid .mm-task-title { font-size: 12px; }
+
+  .mm-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+
+  /* ---- 個別レイアウト調整 ---- */
+
+  /* A: 3カラム固定(現行) */
+  .layout-a .mm-body { }
+
+  /* B: 中央集約 + タスクドロワー */
+  .layout-b .mm-body { position: relative; }
+  .layout-b .mm-backdrop {
+    position: absolute; inset: 0; background: rgba(4, 6, 14, 0.55); z-index: 1;
+  }
+  .layout-b .mm-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 270px; z-index: 2;
+    background: var(--bg-raise); border-left: 1px solid var(--line);
+    box-shadow: -18px 0 40px rgba(0,0,0,0.5);
+    padding: 12px 10px; overflow: hidden;
+  }
+  .layout-b .mm-drawer-tab {
+    position: absolute; top: 14px; right: 270px; z-index: 2;
+    font-family: var(--mono); font-size: 9px; color: var(--accent-glow);
+    background: var(--bg-raise); border: 1px solid var(--line); border-right: none;
+    border-radius: 8px 0 0 8px; padding: 6px 4px; writing-mode: vertical-rl;
+  }
+
+  /* C: 中央対称ツイン(コンソールパネル) */
+  .layout-c .mm-body { position: relative; padding: 22px 60px; align-items: center; justify-content: center; }
+  .layout-c .mm-console {
+    width: 100%; max-width: 980px; height: 100%;
+    display: flex; border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: color-mix(in srgb, var(--bg-raise) 55%, var(--bg));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-glow) 18%, transparent), 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .layout-c .mm-star { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--ink-dim); opacity: 0.5; }
+
+  /* D: 上下分割 + 下部タスクドック */
+  .layout-d .mm-body { flex-direction: column; }
+  .layout-d .mm-body > .mm-inner { flex: 1; min-height: 0; display: flex; }
+  .layout-d .mm-task-dock {
+    flex-shrink: 0; border-top: 1px solid var(--line); padding: 10px 16px;
+    display: flex; gap: 10px; overflow-x: auto;
+  }
+  .layout-d .mm-task-dock .mm-task { flex: 0 0 200px; margin-bottom: 0; }
+  .layout-d .mm-dock-title { font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--ink-dim); padding: 8px 16px 0; flex-shrink: 0; }
+
+  /* E: タスク司令塔中心 */
+  .layout-e .mm-body { }
+  .layout-e .mm-chat-rail { width: 260px; flex-shrink: 0; border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+  .layout-e .mm-chat-rail .mm-chat { padding: 14px; gap: 8px; }
+  .layout-e .mm-chat-rail .mm-dock { padding: 10px 14px; }
+  .layout-e .mm-task-main { flex: 1; min-width: 0; padding: 16px 20px; overflow: hidden; }
+  .layout-e .mm-task-main-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; color: var(--ink-dim); margin-bottom: 10px; }
+
+  /* F: フローティングHUDオーバーレイ */
+  .layout-f .mm-body { position: relative; }
+  .layout-f .mm-chat.canvas { position: absolute; inset: 0; padding-top: 26px; }
+  .layout-f .mm-float {
+    position: absolute; z-index: 2;
+    background: color-mix(in srgb, var(--bg-raise) 62%, transparent);
+    backdrop-filter: blur(6px);
+    border: 1px solid color-mix(in srgb, var(--accent-glow) 30%, var(--line));
+    border-radius: 12px;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+    padding: 10px 10px;
+  }
+  .layout-f .mm-float.projects { top: 16px; left: 16px; width: 176px; }
+  .layout-f .mm-float.tasks { top: 16px; right: 16px; width: 250px; }
+  .layout-f .mm-float-mic {
+    position: absolute; z-index: 2; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: color-mix(in srgb, var(--bg-raise) 75%, transparent);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 999px; padding: 8px 18px;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.45);
+  }
+  .layout-f .mm-float-mic .mm-live { background: transparent; border: none; padding: 0 6px; min-width: 220px; }
+
+  /* ---------------------------------------------------------------- */
+  /* 説明パネル                                                       */
+  /* ---------------------------------------------------------------- */
+
+  .pattern-desc {
+    background: var(--bg-raise);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .pattern-desc h2 { font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--accent-glow); }
+  .pattern-desc .tagline { font-size: 12px; color: var(--ink-dim); line-height: 1.6; margin-bottom: 12px; }
+  .pattern-desc dt {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--ink-dim);
+    margin-top: 12px; margin-bottom: 4px;
+  }
+  .pattern-desc dt::before { content: "// "; opacity: 0.6; }
+  .pattern-desc dd ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .pattern-desc dd li { font-size: 12px; line-height: 1.6; padding-left: 14px; position: relative; }
+  .pattern-desc dd.pros li::before { content: "+"; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+  .pattern-desc dd.cons li::before { content: "−"; position: absolute; left: 0; color: var(--err); font-weight: 700; }
+  .pattern-desc dd.feature { font-size: 12px; line-height: 1.7; color: var(--ink); }
+
+  .grid-select-btn {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--accent-glow);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--accent-glow) 40%, var(--line));
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    width: 100%;
+  }
+  .grid-select-btn:hover { background: color-mix(in srgb, var(--accent-glow) 10%, transparent); }
+
+  footer.page-foot {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.8;
+  }
+
+  @media (max-width: 1100px) {
+    .stage[data-view="single"] .pattern-block.is-active { flex-direction: column; }
+    .stage[data-view="single"] .pattern-block.is-active .pattern-desc { flex: 1 1 auto; width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mm-particle { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <h1><span class="mark">◉</span> claude-voice — 会話UI レイアウト比較モックアップ</h1>
+        <p class="sub">
+          タスク一覧パネルと会話表示エリアの配置バリエーションを比較するための<strong>静的モックアップ</strong>です。
+          現行実装(A案)を含む6案を、意匠(藍色ホログラムHUD調)は揃えたまま配置だけ変えています。
+          <strong>本実装への反映は未実施</strong>、比較検討のみを目的としています。
+        </p>
+      </div>
+      <div class="view-toggle" id="viewToggle">
+        <button type="button" data-view="single" class="is-active">切替表示</button>
+        <button type="button" data-view="grid">並べて比較</button>
+      </div>
+    </div>
+
+    <nav class="pattern-tabs" id="patternTabs">
+      <button type="button" data-pattern="a" class="is-active"><span class="label">A. 3カラム固定</span><span class="hint">現行踏襲</span></button>
+      <button type="button" data-pattern="b"><span class="label">B. 中央集約</span><span class="hint">タスクはドロワー</span></button>
+      <button type="button" data-pattern="c"><span class="label">C. 中央対称ツイン</span><span class="hint">コンソールパネル</span></button>
+      <button type="button" data-pattern="d"><span class="label">D. 上下分割</span><span class="hint">タスクは下部ドック</span></button>
+      <button type="button" data-pattern="e"><span class="label">E. タスク司令塔</span><span class="hint">会話はサブレーン</span></button>
+      <button type="button" data-pattern="f"><span class="label">F. フローティングHUD</span><span class="hint">全面キャンバス+浮遊パネル</span></button>
+    </nav>
+
+    <main class="stage" id="stage" data-view="single">
+
+      <!-- ============ A: 3カラム固定(現行踏襲) ============ -->
+      <section class="pattern-block is-active" data-pattern="a">
+        <div>
+          <p class="browser-chrome-label">A. 3カラム固定(現行踏襲・強化版)</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-a" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges">
+                  <span class="mm-badge">◂ サイドバー</span>
+                  <span class="mm-badge accent">Claude Code接続</span>
+                  <span class="mm-badge">読み上げ 1.2x</span>
+                </div>
+              </div>
+              <div class="mm-body">
+                <aside class="mm-projects">
+                  <p class="mm-proj-title">プロジェクト</p>
+                  <div class="mm-proj-row active"><span class="mm-dot"></span>claude-voice<span class="mm-count">1</span></div>
+                  <div class="mm-proj-row">stride-api</div>
+                  <div class="mm-proj-row">design-system</div>
+                </aside>
+                <div class="mm-chat">
+                  <div class="mm-bubble user">音声認識のテキストが入力欄に反映されない不具合を直して</div>
+                  <div class="mm-bubble assistant">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                  <div class="mm-bubble interjection">(割り込み)ついでにテストも追加して</div>
+                </div>
+                <aside class="mm-tasks">
+                  <p class="mm-tasks-title">タスク <span>3件</span></p>
+                  <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                  <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新・追いタスク対応</div></div>
+                  <div class="mm-task failed"><div class="mm-task-meta"><span class="mm-seq">#9</span><span class="mm-state failed">失敗</span></div><div class="mm-task-title">TTSエコー抑止の実装</div></div>
+                </aside>
+              </div>
+              <div class="mm-dock">
+                <div class="mm-mic">●</div>
+                <div class="mm-live">ここに発話が表示されます</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>A. 3カラム固定(現行踏襲・強化版)</h2>
+          <p class="tagline">プロジェクト/会話/タスクを左右に配置する現行構成を土台に、視覚的な仕上げだけを底上げする案。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">ヘッダー下を「プロジェクト(左)・会話(中央)・タスク(右)」の3カラムで常時固定表示。現行実装からの差分は最小。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>実装コストが最も低く、既存コンポーネントをほぼ流用できる</li>
+              <li>タスクの状態変化を会話しながら常時視認できる</li>
+              <li>学習コストゼロ(現行ユーザーがそのまま使える)</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>会話エリアが左右パネルに挟まれ、ワイド画面ほど窮屈に感じる</li>
+              <li>「中央寄せ」の要望には応えられない</li>
+              <li>狭い画面では2段階の折りたたみが必要になる</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="a">この案を単独表示</button>
+        </div>
+      </section>
+
+      <!-- ============ B: 中央集約 + タスクドロワー ============ -->
+      <section class="pattern-block" data-pattern="b">
+        <div>
+          <p class="browser-chrome-label">B. 中央集約・タスクドロワー型</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-b" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges">
+                  <span class="mm-badge">▾ claude-voice</span>
+                  <span class="mm-badge accent is-on mm-toggle-btn">タスク 3 ▸</span>
+                  <span class="mm-badge accent">Claude Code接続</span>
+                </div>
+              </div>
+              <div class="mm-body">
+                <div class="mm-chat centered">
+                  <div class="mm-bubble user">音声認識のテキストが入力欄に反映されない不具合を直して</div>
+                  <div class="mm-bubble assistant">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                  <div class="mm-bubble interjection">(割り込み)ついでにテストも追加して</div>
+                </div>
+                <div class="mm-backdrop"></div>
+                <div class="mm-drawer-tab">TASKS</div>
+                <aside class="mm-drawer">
+                  <p class="mm-tasks-title">タスク <span>3件</span></p>
+                  <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                  <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新・追いタスク対応</div></div>
+                  <div class="mm-task failed"><div class="mm-task-meta"><span class="mm-seq">#9</span><span class="mm-state failed">失敗</span></div><div class="mm-task-title">TTSエコー抑止の実装</div></div>
+                </aside>
+              </div>
+              <div class="mm-dock">
+                <div class="mm-mic">●</div>
+                <div class="mm-live">ここに発話が表示されます</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>B. 中央集約・タスクドロワー型</h2>
+          <p class="tagline">会話を画面中央の単一カラムに集約し、タスク一覧は必要な時だけ引き出すドロワーにする案。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">プロジェクトはヘッダーのドロップダウンに格納。タスクはヘッダー右上の「タスク」バッジをクリックすると右からドロワーが開く(図は開いた状態)。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>会話に完全に集中できる。ボイスチャットとしての主役が明確</li>
+              <li>「中央寄せ」の要望を最も素直に満たす</li>
+              <li>モバイル幅への移行が自然(ドロワーがそのままオーバーレイになる)</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>タスクの完了/失敗をリアルタイムで見逃しやすい</li>
+              <li>複数タスク並行時にドロワーの開閉が煩雑</li>
+              <li>「常時タスク監視」という現行の利用習慣からの転換が必要</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="b">この案を単独表示</button>
+        </div>
+      </section>
+
+      <!-- ============ C: 中央対称ツイン(コンソールパネル) ============ -->
+      <section class="pattern-block" data-pattern="c">
+        <div>
+          <p class="browser-chrome-label">C. 中央対称ツイン(コンソールパネル型)</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-c" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges"><span class="mm-badge accent">Claude Code接続</span></div>
+              </div>
+              <div class="mm-chip-bar">
+                <span class="mm-chip active">claude-voice</span>
+                <span class="mm-chip">stride-api</span>
+                <span class="mm-chip">design-system</span>
+              </div>
+              <div class="mm-body">
+                <span class="mm-star" style="top:18%;left:8%;"></span>
+                <span class="mm-star" style="top:64%;left:5%;"></span>
+                <span class="mm-star" style="top:38%;left:12%;"></span>
+                <span class="mm-star" style="top:22%;right:7%;"></span>
+                <span class="mm-star" style="top:70%;right:10%;"></span>
+                <span class="mm-star" style="top:46%;right:4%;"></span>
+                <div class="mm-console">
+                  <div class="mm-chat">
+                    <div class="mm-bubble user">音声認識のテキストが入力欄に反映されない不具合を直して</div>
+                    <div class="mm-bubble assistant">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                    <div class="mm-bubble interjection">(割り込み)ついでにテストも追加して</div>
+                  </div>
+                  <aside class="mm-tasks">
+                    <p class="mm-tasks-title">タスク <span>3件</span></p>
+                    <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                    <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新・追いタスク対応</div></div>
+                    <div class="mm-task failed"><div class="mm-task-meta"><span class="mm-seq">#9</span><span class="mm-state failed">失敗</span></div><div class="mm-task-title">TTSエコー抑止の実装</div></div>
+                  </aside>
+                </div>
+              </div>
+              <div class="mm-dock">
+                <div class="mm-mic">●</div>
+                <div class="mm-live">ここに発話が表示されます</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>C. 中央対称ツイン(コンソールパネル型)</h2>
+          <p class="tagline">会話とタスクの2カラム構成を維持しつつ、パネル全体を画面中央に「浮かせて」余白を意匠にする案。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">プロジェクトは上部チップバーへ移動。会話+タスクの2カラムを1枚の「ホロコンソール」パネルとして中央配置する。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>会話とタスクが同時に見える現行の情報構成を維持しつつ中央寄せを実現</li>
+              <li>移行コストは中程度で、視覚的インパクトは大きい</li>
+              <li>「機体のホロコンソール」という世界観と相性が良い</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>ワイドモニタでは左右の余白が増えるだけで情報密度は変わらない</li>
+              <li>プロジェクト切り替えが上部チップバーに移り、数が多いと窮屈</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="c">この案を単独表示</button>
+        </div>
+      </section>
+
+      <!-- ============ D: 上下分割 + 下部タスクドック ============ -->
+      <section class="pattern-block" data-pattern="d">
+        <div>
+          <p class="browser-chrome-label">D. 上下分割・タスク下部ドック型</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-d" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges"><span class="mm-badge accent">Claude Code接続</span></div>
+              </div>
+              <div class="mm-body">
+                <aside class="mm-proj-rail">
+                  <div class="mm-rail-icon active">CV<span class="dot"></span></div>
+                  <div class="mm-rail-icon">SA</div>
+                  <div class="mm-rail-icon">DS</div>
+                </aside>
+                <div class="mm-inner">
+                  <div class="mm-chat">
+                    <div class="mm-bubble user">音声認識のテキストが入力欄に反映されない不具合を直して</div>
+                    <div class="mm-bubble assistant">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                    <div class="mm-bubble interjection">(割り込み)ついでにテストも追加して</div>
+                  </div>
+                </div>
+              </div>
+              <p class="mm-dock-title">タスク · 3件</p>
+              <div class="mm-task-dock">
+                <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新・追いタスク対応</div></div>
+                <div class="mm-task failed"><div class="mm-task-meta"><span class="mm-seq">#9</span><span class="mm-state failed">失敗</span></div><div class="mm-task-title">TTSエコー抑止の実装</div></div>
+              </div>
+              <div class="mm-dock">
+                <div class="mm-mic">●</div>
+                <div class="mm-live">ここに発話が表示されます</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>D. 上下分割・タスク下部ドック型</h2>
+          <p class="tagline">会話を全幅の上段、タスクを下段の水平ドックに配置し、縦方向のワークフローにする案。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">プロジェクトは左端の細いアイコンレールに縮小。タスクはマイクドックの直上に横スクロールのカード列として畳み込む。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>会話・タスクとも画面の全幅を使えるため一覧性が高い</li>
+              <li>縦積み構成はスマホなど縦長画面への展開と親和性が高い</li>
+              <li>スクロールが上下一方向で完結し操作が単純</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>タスクを展開すると会話エリアが圧迫される(縦スペースの奪い合い)</li>
+              <li>タスクカードが横長になり、長い指示文などは畳まれがち</li>
+              <li>同時に多数のタスクを見渡すには不向き</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="d">この案を単独表示</button>
+        </div>
+      </section>
+
+      <!-- ============ E: タスク司令塔中心 ============ -->
+      <section class="pattern-block" data-pattern="e">
+        <div>
+          <p class="browser-chrome-label">E. タスク司令塔中心型</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-e" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges"><span class="mm-badge accent">Claude Code接続</span></div>
+              </div>
+              <div class="mm-chip-bar">
+                <span class="mm-chip active">すべて</span>
+                <span class="mm-chip">claude-voice</span>
+                <span class="mm-chip">stride-api</span>
+              </div>
+              <div class="mm-body">
+                <div class="mm-task-main">
+                  <p class="mm-task-main-title">ミッションコントロール · 実行中 1 / 完了 1 / 失敗 1</p>
+                  <div class="mm-task-grid">
+                    <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                    <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新・追いタスク対応</div></div>
+                    <div class="mm-task failed"><div class="mm-task-meta"><span class="mm-seq">#9</span><span class="mm-state failed">失敗</span></div><div class="mm-task-title">TTSエコー抑止の実装</div></div>
+                    <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#7</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">ダークテーマの配色調整</div></div>
+                  </div>
+                </div>
+                <aside class="mm-chat-rail">
+                  <div class="mm-chat">
+                    <div class="mm-bubble assistant mini">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                    <div class="mm-bubble user mini">ついでにテストも追加して</div>
+                  </div>
+                  <div class="mm-dock">
+                    <div class="mm-mic small">●</div>
+                    <div class="mm-live">発話中…</div>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>E. タスク司令塔中心型</h2>
+          <p class="tagline">主役をタスク一覧に入れ替え、会話は補助的な細いレーンに縮小する「ミッションコントロール」構成。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">中央に2列のタスクカードグリッドを大きく配置。会話は右側の細い縦レーンでミニマルに表示し、マイクは常時アクセス可能な位置に残す。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>複数タスクを並行運用するオーケストレーター的な使い方に最適</li>
+              <li>状態の一覧性・視認性が全案中もっとも高い</li>
+              <li>音声は裏側で継続する前提のワークフローと相性が良い</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>「話しかけるボイスUI」としての主役が後退する</li>
+              <li>単発の会話だけしたい場面では画面が過剰に感じられる</li>
+              <li>タスクが少ない/ゼロの間は中央が閑散として見える</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="e">この案を単独表示</button>
+        </div>
+      </section>
+
+      <!-- ============ F: フローティングHUDオーバーレイ ============ -->
+      <section class="pattern-block" data-pattern="f">
+        <div>
+          <p class="browser-chrome-label">F. フローティングHUDオーバーレイ型</p>
+          <div class="frame-wrap">
+            <div class="device-frame layout-f" data-w="1240" data-h="760">
+              <div class="mm-browserbar"><span class="mm-dots"><span></span><span></span><span></span></span><span class="mm-url">localhost:5173</span></div>
+              <span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span><span class="mm-particle"></span>
+              <div class="mm-header">
+                <div class="mm-brand"><span class="mark">◉</span> claude-voice</div>
+                <div class="mm-badges"><span class="mm-badge accent">Claude Code接続</span></div>
+              </div>
+              <div class="mm-body">
+                <div class="mm-chat canvas centered">
+                  <div class="mm-bubble user">音声認識のテキストが入力欄に反映されない不具合を直して</div>
+                  <div class="mm-bubble assistant">原因を確認します。liveDraftの更新処理を見てみますね。</div>
+                  <div class="mm-bubble interjection">(割り込み)ついでにテストも追加して</div>
+                </div>
+                <aside class="mm-float projects">
+                  <p class="mm-proj-title">プロジェクト</p>
+                  <div class="mm-proj-row active"><span class="mm-dot"></span>claude-voice</div>
+                  <div class="mm-proj-row">stride-api</div>
+                </aside>
+                <aside class="mm-float tasks">
+                  <p class="mm-tasks-title">タスク <span>3件</span></p>
+                  <div class="mm-task running"><div class="mm-task-meta"><span class="mm-seq">#12</span><span class="mm-state running">実行中</span></div><div class="mm-task-title">音声認識テキストが反映されない不具合を修正</div></div>
+                  <div class="mm-task succeeded"><div class="mm-task-meta"><span class="mm-seq">#11</span><span class="mm-state succeeded">完了</span></div><div class="mm-task-title">タスクサイドバー刷新</div></div>
+                </aside>
+                <div class="mm-float-mic">
+                  <div class="mm-mic small">●</div>
+                  <div class="mm-live">ここに発話が表示されます</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pattern-desc">
+          <h2>F. フローティングHUDオーバーレイ型</h2>
+          <p class="tagline">会話を全画面キャンバスにし、プロジェクト/タスクは半透明のホログラムパネルとして浮かせる案。</p>
+          <div class="full">
+            <dt>特徴</dt>
+            <dd class="feature">会話エリアがヘッダー直下から画面端までを占有。プロジェクト一覧とタスク一覧はガラス質の半透明パネルとして左上・右上にフロート表示し、畳めるようにする。</dd>
+            <dt>メリット</dt>
+            <dd class="pros"><ul>
+              <li>スターウォーズ風ホログラムUIの世界観をもっとも強く表現できる</li>
+              <li>会話に最大の面積を割きつつ、必要な情報はオーバーレイで随時参照できる</li>
+              <li>没入感・独自性が全案中もっとも高い</li>
+            </ul></dd>
+            <dt>デメリット</dt>
+            <dd class="cons"><ul>
+              <li>フローティングパネル同士やテキストとの重なり調整が必要で実装コストが最も高い</li>
+              <li>情報量が増えるとオーバーレイが煩雑になり可読性が落ちるリスク</li>
+              <li>半透明表現は背景次第でコントラスト不足になりやすく、アクセシビリティ対応が必要</li>
+            </ul></dd>
+          </div>
+          <button type="button" class="grid-select-btn grid-only" data-select="f">この案を単独表示</button>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="page-foot">
+      比較用モックアップ(docs/mockups/layout-proposals.html)。ダミーデータで構成しており、実データ・実挙動とは連動しません。
+      配色・タイポグラフィ・HUD装飾(グリッド背景/パーティクル/コーナーブラケット/ダイアゴナルカット)は src/styles.css のトーンに準拠しています。
+    </footer>
+  </div>
+
+<script>
+(function () {
+  var stage = document.getElementById('stage');
+  var viewToggle = document.getElementById('viewToggle');
+  var patternTabs = document.getElementById('patternTabs');
+
+  function fitFrames() {
+    document.querySelectorAll('.frame-wrap').forEach(function (wrap) {
+      var frame = wrap.querySelector('.device-frame');
+      if (!frame) return;
+      var w = wrap.clientWidth;
+      if (!w) return;
+      var naturalW = parseFloat(frame.dataset.w) || 1240;
+      var naturalH = parseFloat(frame.dataset.h) || 760;
+      var scale = w / naturalW;
+      frame.style.transform = 'scale(' + scale + ')';
+      wrap.style.height = Math.round(naturalH * scale) + 'px';
+    });
+  }
+
+  function scheduleFit() {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(fitFrames);
+    });
+  }
+
+  function setPattern(name) {
+    document.querySelectorAll('.pattern-block').forEach(function (el) {
+      el.classList.toggle('is-active', el.dataset.pattern === name);
+    });
+    document.querySelectorAll('#patternTabs button').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.dataset.pattern === name);
+    });
+    scheduleFit();
+  }
+
+  function setView(view) {
+    stage.dataset.view = view;
+    document.querySelectorAll('#viewToggle button').forEach(function (btn) {
+      btn.classList.toggle('is-active', btn.dataset.view === view);
+    });
+    scheduleFit();
+  }
+
+  function initFromHash() {
+    var hash = (location.hash || '').replace('#', '').toLowerCase();
+    if (/^[a-f]$/.test(hash)) {
+      setPattern(hash);
+      setView('single');
+    }
+  }
+
+  viewToggle.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-view]');
+    if (!btn) return;
+    setView(btn.dataset.view);
+  });
+
+  patternTabs.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-pattern]');
+    if (!btn) return;
+    setPattern(btn.dataset.pattern);
+  });
+
+  stage.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-select]');
+    if (!btn) return;
+    setPattern(btn.dataset.select);
+    setView('single');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  var resizeTimer = null;
+  window.addEventListener('resize', function () {
+    if (resizeTimer) cancelAnimationFrame(resizeTimer);
+    resizeTimer = requestAnimationFrame(fitFrames);
+  });
+
+  window.addEventListener('load', fitFrames);
+  initFromHash();
+  scheduleFit();
+})();
+</script>
+</body>
+</html>
