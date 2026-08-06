@@ -49,6 +49,7 @@ h1 em { font-style: italic; font-weight: 300; color: var(--teal); }
 .c-stark { --accent: var(--gold); }
 .c-atrium { --accent: var(--indigo); }
 .c-cal { --accent: var(--violet); }
+.c-classic { --accent: #d97757; }
 
 footer { margin-top: 48px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--faint); }
 footer a { color: var(--dim); text-decoration: none; border-bottom: 1px solid transparent; }
@@ -59,11 +60,8 @@ footer a:hover { color: var(--teal); border-bottom-color: var(--teal); }
   <p class="eyebrow">CLAUDE-VOICE / UI HUB</p>
   <h1>Voice<em>Core</em></h1>
   <p class="sub">select interface</p>
-  <p class="note">
-    音声でローカルの Claude Code を操る管制塔アプリのUI集。
-    ここが GitHub Pages の場合は<b>見た目のみの静的プレビュー</b>です(バックエンド無し・API接続は
-    オフライン表示になります)。実運用はリポジトリを clone して <code>npm run dev</code> →
-    <code>http://localhost:5183</code> で。
+  <p class="note" id="note">
+    音声でローカルの Claude Code を操る管制塔アプリのUI集。使いたいUIを選んでください。
   </p>
 
   <nav class="grid" aria-label="UI一覧">
@@ -93,8 +91,24 @@ footer a:hover { color: var(--teal); border-bottom-color: var(--teal); }
       <h2>Calibrate</h2>
       <p>発言→動作の判定ルール(送信/緊急/フォーカス)をライブ調整し、空間ふるまいをD&Dでシーン化する調整ツール。</p>
     </a>
+    <a class="card c-classic" href="./classic.html" id="card-classic">
+      <span class="tag">React</span>
+      <h2>Classic</h2>
+      <p>元の3パネルUI(プロジェクト/会話/タスク)。React版のフル機能クライアント。</p>
+    </a>
   </nav>
 
   <footer><a href="https://github.com/0sa0sa/claude-voice">github.com/0sa0sa/claude-voice</a></footer>
+
+  <script>
+    // GitHub Pages(静的プレビュー)では classic(要ビルド+バックエンド)は無いので隠し、注記を出す
+    if (location.hostname.endsWith("github.io")) {
+      var c = document.getElementById("card-classic");
+      if (c) c.remove();
+      document.getElementById("note").innerHTML =
+        "音声でローカルの Claude Code を操る管制塔アプリのUI集。ここは<b>見た目のみの静的プレビュー</b>です" +
+        "(バックエンド無し・API接続はオフライン表示)。実運用は clone して <code>npm run dev</code> → <code>http://localhost:5183</code> で。";
+    }
+  </script>
 </body>
 </html>
