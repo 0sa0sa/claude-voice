@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23b9c8ff' stroke-width='2.5'/%3E%3C/svg%3E" />
+<title>claude-voice — キャリブレーション</title>
+<style>
+:root{
+  --void-1:#0b0c11; --void-2:#16181f;
+  --glass:rgba(255,255,255,.055); --glass-strong:rgba(255,255,255,.10);
+  --edge:rgba(255,255,255,.14); --edge-strong:rgba(255,255,255,.30);
+  --accent:#b9c8ff; --accent-dim:#5f6a95;
+  --ink:#f3f4f7; --ink-dim:#93979f;
+  --ok:#7fe6bf; --warn:#ffcd8a; --bad:#ff8da0;
+  --font-ui:-apple-system, ui-sans-serif, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, sans-serif;
+  --font-mono:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{margin:0; background:linear-gradient(160deg,var(--void-2),var(--void-1) 70%); color:var(--ink); font-family:var(--font-ui); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; height:100%;}
+button,input,textarea,select{font:inherit; color:inherit;}
+h1,h2,h3{margin:0;}
+.mono{font-family:var(--font-mono);}
+
+header{display:flex; align-items:center; gap:14px; padding:12px 18px; border-bottom:1px solid var(--edge); flex:none;}
+header .bmark{width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 12px var(--accent);}
+header h1{font-size:14px; font-weight:600;}
+header .sub{font-size:11px; color:var(--ink-dim);}
+header .spacer{flex:1;}
+.btn{background:var(--glass); border:1px solid var(--edge); border-radius:9px; padding:7px 12px; font-size:12px; cursor:pointer;}
+.btn:hover{background:var(--glass-strong); border-color:var(--edge-strong);}
+.btn.primary{background:var(--accent); color:#0b0c11; border-color:transparent; font-weight:600;}
+.btn.ghost{background:none;}
+a.link{color:var(--accent); font-size:12px; text-decoration:none;}
+#status{font-size:11px; color:var(--ok); min-width:80px;}
+
+main{flex:1; min-height:0; display:grid; grid-template-columns: 1fr 430px; gap:0;}
+#stage-wrap{position:relative; min-width:0; overflow:hidden; border-right:1px solid var(--edge);}
+#stage{position:absolute; inset:16px; border-radius:16px;
+  background:radial-gradient(ellipse 70% 60% at 50% 40%, rgba(140,160,255,.06), transparent 60%), var(--glass);
+  border:1px solid var(--edge); overflow:hidden;}
+#trails{position:absolute; inset:0; pointer-events:none; z-index:1;}
+.tok{position:absolute; z-index:2; transform:translate(-50%,-50%); cursor:grab; user-select:none; touch-action:none;
+  transition:box-shadow .2s ease;}
+.tok.dragging{cursor:grabbing; z-index:5;}
+.tok.anim{transition:left .7s cubic-bezier(.16,.84,.32,1), top .7s cubic-bezier(.16,.84,.32,1), transform .7s cubic-bezier(.16,.84,.32,1);}
+.tok .body{border-radius:14px; border:1px solid var(--edge); background:var(--glass-strong); backdrop-filter:blur(8px);
+  box-shadow:0 12px 28px rgba(0,0,0,.32); display:flex; align-items:center; justify-content:center; color:var(--ink); text-align:center;}
+.tok.orb .body{width:76px; height:76px; border-radius:50%; font-family:var(--font-mono); color:var(--accent); font-size:15px;}
+.tok.task .body{width:120px; height:64px; font-size:12px; padding:6px; flex-direction:column; gap:3px;}
+.tok.task .body .pill{font-size:8px; color:var(--ink-dim);}
+.tok.chat .body{width:120px; height:180px; font-size:11px; color:var(--ink-dim); border-style:dashed;}
+.tok.shelf .body{width:150px; height:40px; font-size:10px; color:var(--ink-dim);}
+.tok .cap{position:absolute; left:50%; top:calc(100% + 4px); transform:translateX(-50%); white-space:nowrap; font-size:9px; color:var(--ink-dim); font-family:var(--font-mono);}
+.tok.hot .body{border-color:var(--accent); box-shadow:0 12px 28px rgba(0,0,0,.4), 0 0 22px rgba(185,200,255,.28);}
+#stage-hint{position:absolute; left:16px; bottom:12px; z-index:3; font-size:11px; color:var(--ink-dim);}
+#state-bar{position:absolute; left:16px; top:14px; z-index:4; display:flex; align-items:center; gap:6px;}
+#state-bar .sb-label{font-size:10px; color:var(--ink-dim); margin-right:2px;}
+#state-bar .sb{background:var(--glass); border:1px solid var(--edge); border-radius:8px; padding:5px 10px; font-size:11px; cursor:pointer; color:var(--ink-dim);}
+#state-bar .sb:hover{color:var(--ink);}
+#state-bar .sb.on{background:var(--accent); color:#0b0c11; border-color:transparent; font-weight:600;}
+.tok.focusrole .body{border-color:color-mix(in srgb,var(--accent) 60%, transparent); box-shadow:0 12px 28px rgba(0,0,0,.4), 0 0 22px rgba(185,200,255,.25);}
+.tok.big .body{width:150px; height:96px;}
+
+#inspector{min-width:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px;}
+.card{background:var(--glass); border:1px solid var(--edge); border-radius:12px; padding:12px 13px;}
+.card > h2{font-size:11px; letter-spacing:.08em; color:var(--ink-dim); text-transform:uppercase; margin-bottom:9px; display:flex; align-items:center; gap:8px;}
+.card > h2 .grow{flex:1;}
+.row{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+label.mini{font-size:10px; color:var(--ink-dim);}
+input[type=text], textarea, input[type=number]{width:100%; background:var(--void-1); border:1px solid var(--edge); border-radius:8px; padding:8px 10px; font-size:12.5px; outline:none;}
+input[type=text]:focus, textarea:focus{border-color:color-mix(in srgb,var(--accent) 50%, transparent);}
+textarea{resize:vertical; font-family:var(--font-mono); font-size:11.5px; line-height:1.5;}
+.chips{display:flex; flex-wrap:wrap; gap:6px;}
+.chip{font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid var(--edge); background:var(--void-1); color:var(--ink-dim);}
+.chip b{color:var(--ink); font-weight:600;}
+.chip.on{border-color:color-mix(in srgb,var(--accent) 55%, transparent); color:var(--ink);}
+.chip.urgent{border-color:color-mix(in srgb,var(--warn) 60%, transparent); color:var(--warn);}
+.chip.act{border-color:color-mix(in srgb,var(--accent) 55%, transparent); color:var(--accent);}
+
+.scene{display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--edge); border-radius:9px; margin-bottom:6px; background:var(--void-1);}
+.scene .nm{flex:1; min-width:0;}
+.scene .nm b{font-size:12.5px;} .scene .nm .tg{font-size:10px; color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.scene .sig{font-size:9px; padding:2px 6px; border-radius:6px; background:var(--glass); color:var(--accent); font-family:var(--font-mono);}
+.iconbtn{background:none; border:1px solid var(--edge); border-radius:7px; padding:4px 8px; font-size:11px; cursor:pointer;}
+.iconbtn:hover{border-color:var(--edge-strong);}
+.iconbtn.play{color:var(--accent);}
+.iconbtn.del{color:var(--bad);}
+
+#log{max-height:150px; overflow-y:auto; font-family:var(--font-mono); font-size:10.5px; line-height:1.7; color:var(--ink-dim);}
+#log .mv b{color:var(--ink);} #log .mv .arw{color:var(--accent);}
+#log .empty{color:var(--ink-dim); font-style:italic;}
+
+details{border-top:1px solid var(--edge); padding-top:8px;}
+details summary{cursor:pointer; font-size:11px; color:var(--ink-dim); letter-spacing:.06em; text-transform:uppercase; list-style:none;}
+details summary::-webkit-details-marker{display:none;}
+details[open] summary{color:var(--accent);}
+.grp{margin-top:8px;} .grp label{display:block; font-size:10px; color:var(--ink-dim); margin-bottom:3px;}
+.err{color:var(--bad); font-size:10px; margin-top:3px; white-space:pre-wrap;}
+
+table{width:100%; border-collapse:collapse; font-size:11px;}
+table th{text-align:left; color:var(--ink-dim); font-weight:500; font-size:10px; padding:3px 4px; border-bottom:1px solid var(--edge);}
+table td{padding:3px 4px; border-bottom:1px solid rgba(255,255,255,.05); vertical-align:top;}
+table input{font-size:11px; padding:4px 6px;}
+.verdict.pass{color:var(--ok);} .verdict.fail{color:var(--bad);}
+.tiny{font-size:10px; color:var(--ink-dim);}
+</style>
+</head>
+<body>
+<header>
+  <span class="bmark"></span>
+  <div><h1>キャリブレーション</h1><div class="sub">発言 → 動作 と、空間ふるまい(D&D)の調整・記録</div></div>
+  <span class="spacer"></span>
+  <span id="status"></span>
+  <a class="link" href="./atrium.html" target="_blank">atrium ↗</a>
+  <button class="btn ghost" id="reset">既定に戻す</button>
+  <button class="btn ghost" id="export">エクスポート</button>
+  <button class="btn primary" id="save">保存（atriumに適用）</button>
+</header>
+
+<main>
+  <div id="stage-wrap">
+    <div id="state-bar">
+      <span class="sb-label">状態:</span>
+      <button class="sb on" data-state="project">プロジェクト集中</button>
+      <button class="sb" data-state="task">タスク集中</button>
+      <button class="sb" data-state="overview">俯瞰</button>
+    </div>
+    <div id="stage">
+      <svg id="trails"></svg>
+    </div>
+    <div id="stage-hint">オブジェクトをドラッグして「こう動かしたい」を表現 → 下の「動きログ」で追跡、「シーンを保存」で記録。状態を切り替えて各画面の配置を作れます。</div>
+  </div>
+
+  <aside id="inspector">
+    <div class="card">
+      <h2>発言 <span class="grow"></span><span class="tiny">入力→判定をライブ表示</span></h2>
+      <input type="text" id="utter" placeholder="例: 2番のタスクを見せて / 緊急でビルド直して 送信 / 全体に戻して" />
+      <div class="row" style="margin-top:9px" id="verdict"></div>
+      <div class="row" style="margin-top:9px">
+        <button class="btn" id="mic-btn">🎙 マイクで発話</button>
+        <button class="btn" id="play-match">▶ 一致シーンを再生</button>
+        <span class="tiny" id="mic-state"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>シーン（空間ふるまい）<span class="grow"></span></h2>
+      <div class="row">
+        <input type="text" id="scene-name" placeholder="シーン名（例: タスクに集中）" style="flex:2; min-width:120px;" />
+        <button class="btn primary" id="scene-save" style="flex:none;">現在の配置を保存</button>
+      </div>
+      <div class="row" style="margin-top:8px; gap:8px;">
+        <label class="mini">動き方</label>
+        <select id="ease" class="chip" style="cursor:pointer;">
+          <option value="smooth">smooth</option><option value="ease">ease</option>
+          <option value="linear">linear</option><option value="spring">spring(弾む)</option><option value="snap">snap(素早い)</option>
+        </select>
+        <label class="mini">所要(ms)</label><input type="number" id="dur" value="700" min="100" step="50" style="width:78px;" />
+        <label class="mini" title="ドラッグの経路(中間の動き)も記録し、再生で辿ります"><input type="checkbox" id="rec-path" /> 軌跡を記録</label>
+        <button class="btn ghost" id="play-current" style="flex:none;">▶ 試す</button>
+      </div>
+      <div class="tiny" style="margin:6px 0 8px;">左上の<b>状態セレクタ</b>で選んだ画面（俯瞰／プロジェクト集中／タスク集中）の配置として保存され、atrium の同じ画面に反映されます。動き方（イージング/所要ms）と、「軌跡を記録」で描いた経路も一緒に保存されます。「保存（atriumに適用）」後、atrium を操作すると反映。</div>
+      <div id="scenes"></div>
+    </div>
+
+    <div class="card">
+      <h2>動きログ / 軌跡<span class="grow"></span><button class="iconbtn" id="log-clear">クリア</button></h2>
+      <div id="log"><div class="empty">まだ移動はありません。ステージでドラッグすると記録されます。</div></div>
+    </div>
+
+    <div class="card">
+      <details id="rules">
+        <summary>発言ルール（正規表現）を編集</summary>
+        <div class="grp"><label>緊急 urgent（1行1パターン）</label><textarea id="r-urgent" rows="3"></textarea><div class="err" id="e-urgent"></div></div>
+        <div class="grp"><label>送信コマンド send（group1 = 本文）</label><textarea id="r-send" rows="2"></textarea><div class="err" id="e-send"></div></div>
+        <div class="grp"><label>俯瞰へ戻す collapse</label><textarea id="r-collapse" rows="2"></textarea><div class="err" id="e-collapse"></div></div>
+        <div class="grp"><label>タスク番号 taskSeq（group1 = 連番）</label><textarea id="r-taskSeq" rows="4"></textarea><div class="err" id="e-taskSeq"></div></div>
+        <div class="row grp">
+          <label class="mini">自動送信の無音(ms)</label><input type="number" id="r-autoSend" min="300" step="100" style="width:100px;" />
+          <label class="mini">プロジェクト名(判定用, カンマ区切り)</label><input type="text" id="r-projects" style="flex:1; min-width:120px;" />
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <details id="tests">
+        <summary>テスト（発言 → 期待する動作）</summary>
+        <div class="tiny" style="margin:6px 0;">期待の書式: <span class="mono">task:2 / project:名前 / collapse / none / urgent / send / send:本文</span>（<span class="mono">+</span> で連結）</div>
+        <table><thead><tr><th style="width:52%">語句</th><th>期待</th><th style="width:56px">判定</th></tr></thead><tbody id="test-body"></tbody></table>
+        <div class="row" style="margin-top:8px"><button class="btn" id="test-add">行を追加</button><button class="btn" id="test-run">全実行</button><span class="tiny" id="test-summary"></span></div>
+      </details>
+    </div>
+  </aside>
+</main>
+
+<script src="./cv-intent.js"></script>
+<script>
+"use strict";
+const $ = (s)=>document.querySelector(s);
+const stage = $("#stage"), trails = $("#trails");
+
+/* ===================== 状態 ===================== */
+let cfg = CVIntent.loadConfig();
+let scenes = Array.isArray(cfg.scenes) ? cfg.scenes : [];
+let projectNames = ["claude-voice", "hojokin-navi"];
+
+/* atriumの3状態それぞれに、役割の合ったトークン群 */
+const STATES = {
+  project: { label:"プロジェクト集中", tokens:[
+    { id:"orb", cls:"orb", label:"CV", cap:"focused project", x:0.22, y:0.42 },
+    { id:"t1", cls:"task", label:"#1", cap:"task 1", x:0.55, y:0.18 },
+    { id:"t2", cls:"task", label:"#2", cap:"task 2", x:0.62, y:0.44 },
+    { id:"t3", cls:"task", label:"#3", cap:"task 3", x:0.55, y:0.70 },
+    { id:"chat", cls:"chat", label:"CHAT", cap:"chat", x:0.90, y:0.50 },
+    { id:"shelf", cls:"shelf", label:"SHELF", cap:"shelf", x:0.25, y:0.88 },
+  ]},
+  task: { label:"タスク集中", tokens:[
+    { id:"orb", cls:"orb", label:"CV", cap:"project (小)", x:0.14, y:0.20 },
+    { id:"tfocus", cls:"task big focusrole", label:"◎", cap:"focused task", x:0.44, y:0.46 },
+    { id:"s1", cls:"task", label:"s1", cap:"sibling 1", x:0.76, y:0.30 },
+    { id:"s2", cls:"task", label:"s2", cap:"sibling 2", x:0.76, y:0.60 },
+    { id:"chat", cls:"chat", label:"CHAT", cap:"chat", x:0.90, y:0.50 },
+  ]},
+  overview: { label:"俯瞰", tokens:[
+    { id:"orb1", cls:"orb", label:"P1", cap:"project 1", x:0.18, y:0.42 },
+    { id:"orb2", cls:"orb", label:"P2", cap:"project 2", x:0.36, y:0.42 },
+    { id:"orb3", cls:"orb", label:"P3", cap:"project 3", x:0.54, y:0.42 },
+    { id:"orb4", cls:"orb", label:"P4", cap:"project 4", x:0.72, y:0.42 },
+    { id:"chat", cls:"chat", label:"CHAT", cap:"chat", x:0.90, y:0.50 },
+  ]},
+};
+let currentState = "project";
+const buffers = {}, pathBuf = {};
+Object.keys(STATES).forEach(st => { buffers[st] = {}; STATES[st].tokens.forEach(t => buffers[st][t.id] = { x:t.x, y:t.y }); });
+function curTokens(){ return STATES[currentState].tokens; }
+const tokEls = {};
+
+/* ===================== ステージ / D&D ===================== */
+function stageSize(){ const r = stage.getBoundingClientRect(); return { w:r.width, h:r.height, r }; }
+function buildTokens(){
+  [...stage.querySelectorAll(".tok")].forEach(el=>el.remove());
+  for (const k in tokEls) delete tokEls[k];
+  curTokens().forEach(t=>{
+    const el = document.createElement("div");
+    el.className = "tok " + t.cls;
+    el.dataset.id = t.id;
+    const label = t.cls==="task" ? `<span class="pill">TASK</span>${t.label}` : t.label;
+    el.innerHTML = `<div class="body">${label}</div><span class="cap">${t.cap}</span>`;
+    stage.appendChild(el);
+    tokEls[t.id] = el;
+    const p = buffers[currentState][t.id] || { x:t.x, y:t.y };
+    placeToken(t.id, p.x, p.y, false);
+    attachDrag(el, t.id);
+  });
+}
+function placeToken(id, nx, ny, animate){
+  const el = tokEls[id]; if (!el) return;
+  el.classList.toggle("anim", !!animate);
+  const { w, h } = stageSize();
+  el.style.left = (nx*w) + "px";
+  el.style.top  = (ny*h) + "px";
+  el.dataset.nx = nx; el.dataset.ny = ny;
+  buffers[currentState][id] = { x:nx, y:ny };
+  if (animate) setTimeout(()=> el.classList.remove("anim"), 780);
+}
+function tokenPos(id){ const el = tokEls[id]; return { x:Number(el.dataset.nx), y:Number(el.dataset.ny) }; }
+function switchState(st){
+  if (!STATES[st] || st===currentState) return;
+  currentState = st;
+  document.querySelectorAll("#state-bar .sb").forEach(b=> b.classList.toggle("on", b.dataset.state===st));
+  buildTokens();
+}
+document.querySelectorAll("#state-bar .sb").forEach(b=> b.addEventListener("click", ()=> switchState(b.dataset.state)));
+
+let drag = null;
+function attachDrag(el, id){
+  el.addEventListener("pointerdown", (e)=>{
+    e.preventDefault();
+    drag = { id, from: tokenPos(id), path:[tokenPos(id)] };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("dragging");
+  });
+  el.addEventListener("pointermove", (e)=>{
+    if (!drag || drag.id !== id) return;
+    const { w, h, r } = stageSize();
+    let nx = (e.clientX - r.left)/w, ny = (e.clientY - r.top)/h;
+    nx = Math.max(0.03, Math.min(0.97, nx)); ny = Math.max(0.04, Math.min(0.96, ny));
+    if ($("#rec-path").checked){ const last = drag.path[drag.path.length-1]; if (Math.hypot(nx-last.x, ny-last.y) > 0.02) drag.path.push({x:nx,y:ny}); }
+    placeToken(id, nx, ny, false);
+  });
+  el.addEventListener("pointerup", (e)=>{
+    if (!drag || drag.id !== id) return;
+    el.classList.remove("dragging");
+    const to = tokenPos(id);
+    if ($("#rec-path").checked && drag.path.length > 1){
+      drag.path.push(to);
+      pathBuf[currentState] = pathBuf[currentState] || {};
+      pathBuf[currentState][id] = drag.path.slice();
+      drawPath(drag.path);
+    } else {
+      drawTrail(drag.from, to);
+    }
+    recordMove(id, drag.from, to);
+    drag = null;
+  });
+}
+
+/* ===================== 動きログ + 軌跡 ===================== */
+let moves = [];
+function recordMove(id, from, to){
+  const dx = to.x-from.x, dy = to.y-from.y;
+  if (Math.abs(dx) < 0.005 && Math.abs(dy) < 0.005) return; // ほぼ移動なしは無視
+  moves.unshift({ id, from, to, t: Date.now() });
+  moves = moves.slice(0, 60);
+  renderLog();
+}
+function pct(v){ return Math.round(v*100) + "%"; }
+function renderLog(){
+  const el = $("#log");
+  if (!moves.length){ el.innerHTML = `<div class="empty">まだ移動はありません。ステージでドラッグすると記録されます。</div>`; return; }
+  el.innerHTML = moves.map(m=>{
+    const cap = (curTokens().find(t=>t.id===m.id)||{}).cap || m.id;
+    return `<div class="mv"><b>${cap}</b> (${pct(m.from.x)},${pct(m.from.y)}) <span class="arw">→</span> (${pct(m.to.x)},${pct(m.to.y)})</div>`;
+  }).join("");
+}
+function drawPath(points){
+  if (points.length < 2) return;
+  const { w, h } = stageSize(); const ns="http://www.w3.org/2000/svg";
+  const pl = document.createElementNS(ns,"polyline");
+  pl.setAttribute("points", points.map(p=>`${(p.x*w).toFixed(1)},${(p.y*h).toFixed(1)}`).join(" "));
+  pl.setAttribute("fill","none"); pl.setAttribute("stroke","var(--accent)"); pl.setAttribute("stroke-width","1.6"); pl.setAttribute("opacity","0.9");
+  trails.appendChild(pl);
+  setTimeout(()=>{ pl.style.transition="opacity 1.4s"; pl.style.opacity="0"; setTimeout(()=>pl.remove(),1500); }, 2000);
+}
+function drawTrail(from, to){
+  const { w, h } = stageSize();
+  const ns = "http://www.w3.org/2000/svg";
+  const line = document.createElementNS(ns, "line");
+  line.setAttribute("x1", from.x*w); line.setAttribute("y1", from.y*h);
+  line.setAttribute("x2", to.x*w);   line.setAttribute("y2", to.y*h);
+  line.setAttribute("stroke", "var(--accent)"); line.setAttribute("stroke-width", "1.5");
+  line.setAttribute("stroke-dasharray", "4 4"); line.setAttribute("opacity", "0.9");
+  trails.appendChild(line);
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", to.x*w); dot.setAttribute("cy", to.y*h); dot.setAttribute("r", "3.5"); dot.setAttribute("fill", "var(--accent)");
+  trails.appendChild(dot);
+  // フェードして消す（軌跡は残しすぎない）
+  setTimeout(()=>{ line.style.transition="opacity 1.2s"; dot.style.transition="opacity 1.2s"; line.style.opacity="0"; dot.style.opacity="0"; setTimeout(()=>{ line.remove(); dot.remove(); }, 1300); }, 1500);
+}
+$("#log-clear").addEventListener("click", ()=>{ moves=[]; renderLog(); });
+
+/* ===================== シーン（保存・再生・削除） ===================== */
+const EZ = { smooth:"cubic-bezier(.16,.84,.32,1)", ease:"ease", linear:"linear", spring:"cubic-bezier(.34,1.56,.64,1)", snap:"cubic-bezier(.5,0,.1,1)" };
+function sceneTransition(){ return { easing: $("#ease").value, ms: Number($("#dur").value)||700 }; }
+function sigOf(text){
+  const c = CVIntent.classify(text, cfg, projectNames);
+  if (c.view.action === "task") return "task";
+  if (c.view.action === "project") return "project";
+  return "overview"; // collapse / none も俯瞰扱い
+}
+function currentSig(){ const u = $("#utter").value.trim(); return u ? sigOf(u) : currentState; }
+function captureScene(){ const positions = {}; curTokens().forEach(t=> positions[t.id] = tokenPos(t.id)); return positions; }
+function saveScene(){
+  const trigger = $("#utter").value.trim();
+  const sig = currentState;   // 状態セレクタが「どのatrium画面の配置か」を決める
+  const name = $("#scene-name").value.trim() || (trigger ? trigger.slice(0,20) : STATES[sig].label);
+  const scene = { id:"s"+Date.now().toString(36), name, trigger, sig, positions: captureScene(), transition: sceneTransition() };
+  const paths = pathBuf[sig];
+  if (paths && Object.keys(paths).length) scene.paths = JSON.parse(JSON.stringify(paths));
+  // atrium は sig ごとに1つの配置を使うため、同 sig の既存シーンは置き換える
+  scenes = scenes.filter(s => s.sig !== sig).concat(scene);
+  $("#scene-name").value = "";
+  renderScenes(); flashStatus(`「${STATES[sig].label}」の配置を保存（未適用）`);
+}
+function placeTokenEased(id, nx, ny, ms, easing){
+  const el = tokEls[id]; if (!el) return;
+  el.style.transition = `left ${ms}ms ${EZ[easing]||EZ.smooth}, top ${ms}ms ${EZ[easing]||EZ.smooth}`;
+  const { w, h } = stageSize();
+  el.style.left = (nx*w)+"px"; el.style.top = (ny*h)+"px"; el.dataset.nx = nx; el.dataset.ny = ny;
+  buffers[currentState][id] = { x:nx, y:ny };
+  setTimeout(()=>{ el.style.transition = ""; }, ms+50);
+}
+function animateAlong(id, points, ms, easing){
+  const el = tokEls[id]; if (!el || points.length < 2) return;
+  const { w, h } = stageSize(); const t0 = performance.now();
+  const ease = (t)=> easing==="linear" ? t : easing==="spring" ? (1-Math.pow(1-t,3))+0.06*Math.sin(t*Math.PI) : (1-Math.pow(1-t,3));
+  drawPath(points);
+  function frame(now){
+    const k = Math.min(1, (now-t0)/ms); const e = Math.max(0, Math.min(1, ease(k)));
+    const fi = e*(points.length-1), i = Math.floor(fi), f = fi-i;
+    const a = points[i], b = points[Math.min(points.length-1, i+1)];
+    const x = a.x+(b.x-a.x)*f, y = a.y+(b.y-a.y)*f;
+    el.style.left=(x*w)+"px"; el.style.top=(y*h)+"px"; el.dataset.nx=x; el.dataset.ny=y;
+    if (k < 1) requestAnimationFrame(frame); else buffers[currentState][id]={x:points[points.length-1].x,y:points[points.length-1].y};
+  }
+  requestAnimationFrame(frame);
+}
+function playScene(scene){
+  if (scene.sig && scene.sig !== currentState) switchState(scene.sig);
+  const ms = scene.transition ? scene.transition.ms : 700, ez = scene.transition ? scene.transition.easing : "smooth";
+  curTokens().forEach(t=>{
+    const p = scene.positions[t.id]; if (!p) return;
+    if (scene.paths && scene.paths[t.id] && scene.paths[t.id].length > 1){ animateAlong(t.id, scene.paths[t.id], ms, ez); }
+    else { drawTrail(tokenPos(t.id), p); placeTokenEased(t.id, p.x, p.y, ms, ez); }
+  });
+}
+function deleteScene(id){ scenes = scenes.filter(s=>s.id!==id); renderScenes(); }
+function renderScenes(){
+  const box = $("#scenes");
+  if (!scenes.length){ box.innerHTML = `<div class="tiny">まだシーンはありません。状態を選び、配置してから「現在の配置を保存」。</div>`; return; }
+  box.innerHTML = "";
+  scenes.forEach(s=>{
+    const row = document.createElement("div"); row.className="scene";
+    const meta = `${s.transition?s.transition.easing+" "+s.transition.ms+"ms":""}${s.paths?" · 軌跡":""}`;
+    row.innerHTML = `<div class="nm"><b>${escapeHtml(s.name)}</b><div class="tg">${escapeHtml(STATES[s.sig]?STATES[s.sig].label:s.sig)}${meta?" · "+escapeHtml(meta):""}</div></div>
+      <span class="sig">${s.sig}</span>
+      <button class="iconbtn play">▶</button><button class="iconbtn del">✕</button>`;
+    row.querySelector(".play").addEventListener("click", ()=> playScene(s));
+    row.querySelector(".del").addEventListener("click", ()=> deleteScene(s.id));
+    box.appendChild(row);
+  });
+}
+$("#scene-save").addEventListener("click", saveScene);
+$("#play-current").addEventListener("click", ()=>{
+  const scene = { sig:currentState, positions: captureScene(), transition: sceneTransition(), paths: pathBuf[currentState] };
+  curTokens().forEach(t=> placeToken(t.id, 0.5, 0.5, false)); // いったん中央へ散らして
+  setTimeout(()=> playScene(scene), 60);                        // 動きを再生して確認
+});
+$("#play-match").addEventListener("click", ()=>{
+  const sig = currentSig();
+  const s = scenes.find(x=>x.sig===sig);
+  if (s) playScene(s); else flashStatus(`「${STATES[sig]?STATES[sig].label:sig}」のシーンがありません`, true);
+});
+
+/* ===================== 発言の判定プレビュー ===================== */
+function renderVerdict(){
+  const text = $("#utter").value;
+  const c = CVIntent.classify(text, cfg, projectNames);
+  const v = c.view;
+  const viewLabel = v.action==="task" ? `フォーカス: タスク#${v.seq}` : v.action==="project" ? `フォーカス: ${v.project}` : v.action==="collapse" ? "俯瞰へ戻す" : "変化なし";
+  $("#verdict").innerHTML = `
+    <span class="chip ${c.send.triggered?'on':''}">送信: <b>${c.send.triggered?escapeHtml(c.send.body):"—"}</b></span>
+    <span class="chip ${c.urgency==='urgent'?'urgent':''}">緊急: <b>${c.urgency==='urgent'?'YES':'no'}</b></span>
+    <span class="chip act">動作: <b>${viewLabel}</b></span>
+    <span class="chip">→ chat: <b>${escapeHtml(c.chatText||'—')}</b></span>`;
+}
+$("#utter").addEventListener("input", renderVerdict);
+
+/* ===================== ルール編集 ===================== */
+function fillRules(){
+  $("#r-urgent").value = cfg.urgent.join("\n");
+  $("#r-send").value = cfg.send.join("\n");
+  $("#r-collapse").value = cfg.collapse.join("\n");
+  $("#r-taskSeq").value = cfg.taskSeq.join("\n");
+  $("#r-autoSend").value = cfg.autoSendMs;
+  $("#r-projects").value = projectNames.join(", ");
+}
+function readRules(){
+  const lines = (id)=> $(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
+  cfg.urgent = lines("#r-urgent"); cfg.send = lines("#r-send"); cfg.collapse = lines("#r-collapse"); cfg.taskSeq = lines("#r-taskSeq");
+  cfg.autoSendMs = Number($("#r-autoSend").value)||2000;
+  projectNames = $("#r-projects").value.split(",").map(s=>s.trim()).filter(Boolean);
+  cfg = CVIntent.normalize(cfg); cfg.scenes = scenes;
+  showRuleErrors();
+  renderVerdict(); runTests();
+}
+function showRuleErrors(){
+  const errs = CVIntent.validate(cfg);
+  ["urgent","send","collapse","taskSeq"].forEach(k=>{
+    const box = document.getElementById("e-"+k);
+    box.textContent = errs[k] ? errs[k].map(e=>`不正な正規表現: ${e.src} — ${e.msg}`).join("\n") : "";
+  });
+}
+["#r-urgent","#r-send","#r-collapse","#r-taskSeq","#r-autoSend","#r-projects"].forEach(id=> $(id).addEventListener("input", readRules));
+
+/* ===================== テストグリッド ===================== */
+const DEFAULT_TESTS = [
+  { p:"タスク1を見せて", e:"task:1" },
+  { p:"2番のタスクはどう？", e:"task:2" },
+  { p:"#3 の詳細", e:"task:3" },
+  { p:"全体に戻して", e:"collapse" },
+  { p:"緊急でビルド直して 送信", e:"urgent+send" },
+  { p:"ポート8799を確認して", e:"none" },
+  { p:"claude-voice のテストを回して", e:"project:claude-voice" },
+  { p:"これを実装して、送信", e:"send:これを実装して" },
+];
+let tests = DEFAULT_TESTS.slice();
+function renderTests(){
+  const tb = $("#test-body"); tb.innerHTML = "";
+  tests.forEach((row, i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input type="text" data-i="${i}" data-k="p" value="${escapeAttr(row.p)}"></td>
+      <td><input type="text" data-i="${i}" data-k="e" value="${escapeAttr(row.e)}"></td>
+      <td class="verdict" data-v="${i}">—</td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach(inp=> inp.addEventListener("input", (e)=>{ tests[+inp.dataset.i][inp.dataset.k]=inp.value; }));
+}
+function matchExpect(expect, text){
+  const c = CVIntent.classify(text, cfg, projectNames);
+  return expect.split("+").map(s=>s.trim()).every(part=>{
+    if (part==="urgent") return c.urgency==="urgent";
+    if (part==="send") return c.send.triggered;
+    if (part.startsWith("send:")) return c.send.triggered && c.send.body===part.slice(5);
+    if (part==="collapse") return c.view.action==="collapse";
+    if (part==="none") return c.view.action==="none";
+    if (part.startsWith("task:")) return c.view.action==="task" && String(c.view.seq)===part.slice(5);
+    if (part.startsWith("project:")) return c.view.action==="project" && c.view.project===part.slice(8);
+    return false;
+  });
+}
+function runTests(){
+  let pass=0;
+  tests.forEach((row,i)=>{
+    const cell = document.querySelector(`[data-v="${i}"]`); if (!cell) return;
+    const ok = matchExpect(row.e, row.p);
+    cell.textContent = ok ? "✓" : "✗"; cell.className = "verdict " + (ok?"pass":"fail");
+    if (ok) pass++;
+  });
+  $("#test-summary").textContent = `${pass}/${tests.length} pass`;
+}
+$("#test-add").addEventListener("click", ()=>{ tests.push({p:"",e:""}); renderTests(); });
+$("#test-run").addEventListener("click", runTests);
+
+/* ===================== マイク（発話を判定にかける） ===================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec=null, listening=false;
+$("#mic-btn").addEventListener("click", ()=>{
+  if (!SR){ $("#mic-state").textContent="このブラウザは音声認識非対応"; return; }
+  if (listening){ rec.stop(); return; }
+  rec = new SR(); rec.lang="ja-JP"; rec.continuous=true; rec.interimResults=true;
+  rec.onresult = (e)=>{ let s=""; for(let i=0;i<e.results.length;i++) s+=e.results[i][0].transcript; $("#utter").value=s; renderVerdict(); };
+  rec.onend = ()=>{ listening=false; $("#mic-btn").textContent="🎙 マイクで発話"; $("#mic-state").textContent=""; };
+  rec.onerror = ()=>{};
+  rec.start(); listening=true; $("#mic-btn").textContent="■ 停止"; $("#mic-state").textContent="認識中…";
+});
+
+/* ===================== 保存 / エクスポート / リセット ===================== */
+function collect(){ readRules(); cfg.scenes = scenes; return cfg; }
+$("#save").addEventListener("click", ()=>{
+  const c = collect(); CVIntent.saveConfig(c);
+  // 他タブ(atrium)へ即時反映を促すため storage を明示的に叩く
+  flashStatus("保存しました（atriumに適用）");
+});
+$("#export").addEventListener("click", async ()=>{
+  const json = JSON.stringify(collect(), null, 2);
+  try{ await navigator.clipboard.writeText(json); flashStatus("JSONをコピーしました"); }
+  catch(e){ prompt("設定JSON:", json); }
+});
+$("#reset").addEventListener("click", ()=>{
+  if (!confirm("ルールとシーンを既定に戻します。よろしいですか？")) return;
+  CVIntent.resetConfig(); cfg = CVIntent.normalize(); scenes = []; projectNames=["claude-voice","hojokin-navi"];
+  fillRules(); renderScenes(); renderVerdict(); runTests(); flashStatus("既定に戻しました");
+});
+let statusTimer=null;
+function flashStatus(msg, warn){ const s=$("#status"); s.textContent=msg; s.style.color = warn?"var(--warn)":"var(--ok)"; if(statusTimer)clearTimeout(statusTimer); statusTimer=setTimeout(()=>s.textContent="",2600); }
+
+/* ===================== utils ===================== */
+function escapeHtml(s){ return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function escapeAttr(s){ return escapeHtml(s).replace(/"/g,"&quot;"); }
+
+/* ===================== 起動 ===================== */
+buildTokens();
+fillRules(); renderScenes(); renderVerdict(); renderTests(); runTests(); renderLog();
+window.addEventListener("resize", ()=>{ curTokens().forEach(t=>{ const p=tokenPos(t.id); placeToken(t.id, p.x, p.y, false); }); });
+</script>
+</body>
+</html>
