@@ -1184,6 +1184,14 @@ export default function App() {
             ◉
           </span>
           <h1>claude-voice</h1>
+          {/* 各UIバリアントへの入口。radialが専用UI、他は実験UI */}
+          <nav className="ui-links" aria-label="UIバリアント">
+            <a href="/radial.html" title="VoiceCore Radial(専用UI)">radial</a>
+            <a href="/vision.html" title="visionOS風ワークスペース">vision</a>
+            <a href="/starkos.html" title="STARK OS風コックピット">starkos</a>
+            <a href="/atrium.html" title="空間オーブ+視線トラッキング">atrium</a>
+            <a href="/calibrate.html" title="発言→動作/D&Dシーンの調整">calibrate</a>
+          </nav>
         </div>
         <div className="header-right">
           <button

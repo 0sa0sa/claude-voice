@@ -292,7 +292,7 @@ table.pt .prog i{display:block; height:100%; background:var(--accent); box-shado
     <div class="brand"><span class="bmark"></span><b>claude-voice</b></div>
     <span id="mode-badge">…</span>
     <button class="gaze-btn" id="gaze-btn" title="視線トラッキング（カメラで視線の先のタスク/プロジェクトを指す）">👁</button>
-    <a class="cal-link" href="/calibrate.html" target="_blank" title="発言と動作の調整（キャリブレーション）">⚙</a>
+    <a class="cal-link" href="./calibrate.html" target="_blank" title="発言と動作の調整（キャリブレーション）">⚙</a>
     <label class="tts-toggle"><input type="checkbox" id="tts-on" checked /> 読み上げ</label>
     <select class="rate" id="rate" aria-label="読み上げ速度"><option>1</option><option selected>1.2</option><option>1.5</option><option>2</option></select>
   </div>
@@ -308,7 +308,7 @@ table.pt .prog i{display:block; height:100%; background:var(--accent); box-shado
   </div>
 </aside>
 
-<script src="/cv-intent.js"></script>
+<script src="./cv-intent.js"></script>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -944,7 +944,7 @@ function ensureWebgazer(){
   return new Promise((res, rej)=>{
     if (window.webgazer) return res();
     const s = document.createElement("script");
-    s.src = "/vendor/webgazer.js"; s.async = true;
+    s.src = "./vendor/webgazer.js"; s.async = true;
     s.onload = ()=> res();
     s.onerror = ()=> rej(new Error("webgazer.js の読み込みに失敗"));
     document.head.appendChild(s);

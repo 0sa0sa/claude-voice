@@ -408,6 +408,29 @@ body {
   gap: 10px;
 }
 
+/* 各UIバリアントへのリンク列(ブランド横・小さく控えめに) */
+.ui-links {
+  display: flex;
+  gap: 10px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+.ui-links a {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.ui-links a:hover {
+  color: var(--accent-glow);
+  border-bottom-color: var(--accent-glow);
+}
+
 .brand-mark {
   color: var(--accent);
   font-size: 18px;
