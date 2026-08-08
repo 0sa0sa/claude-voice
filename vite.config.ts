@@ -2,8 +2,11 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
+  // GitHub Pages は /claude-voice/ サブパス配信のため、ビルド時のみ相対base
+  // にしてどのサブパスに置かれても動くようにする(devサーバーは既定の "/" のまま)
+  base: command === "build" ? "./" : "/",
   build: {
     rollupOptions: {
       // ルート(/)は静的なUI Hub、React版(classic)は /classic.html、
@@ -24,4 +27,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
