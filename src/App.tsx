@@ -413,7 +413,13 @@ export default function App() {
     (text: string) => {
       const message = text.trim();
       if (!message || sendGuardRef.current) return;
-      if (message === lastSentRef.current) return; // 同一発話の再発火は無視
+      if (message === lastSentRef.current) {
+        // 認識エンジンの再送クセ等による同一発話の再発火。送信はしないが、
+        // 確定バッファはここで必ず破棄する。破棄しないと、この古いテキストが
+        // 次に来る本当に新しい発話へ連結されて送られてしまう。
+        speechResetRef.current();
+        return;
+      }
       sendGuardRef.current = true;
       queueMicrotask(() => {
         sendGuardRef.current = false;

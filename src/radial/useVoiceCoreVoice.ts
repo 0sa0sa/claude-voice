@@ -126,17 +126,54 @@ export function useVoiceCoreVoice({
 
   /* ---- テキスト入力(コンソール欄) ---- */
   const [draft, setDraft] = useState("");
-  const submitDraft = useCallback(() => {
-    const v = draft.trim();
-    if (!v) return;
-    setDraft("");
-    enqueue(v);
-  }, [draft, enqueue]);
 
   /* ---- 音声認識 ---- */
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  // 二重送信ガード(App.tsxの既存パターンを踏襲): 音声認識の finals は明示的に
+  // reset() するまで蓄積され続けるため、送信経路が speech.reset() を呼び忘れると
+  // 古い確定テキストが次の onresult で再び draft に復活し、無音タイマーが同じ内容を
+  // 延々と再送し続ける("同じ内容がずっとループする"バグの原因)。
+  // そのため「実際にディスパッチする」処理を1箇所(sendTranscript)に集約し、
+  // どの経路(自動送信/送信コマンド/手動送信)から来ても必ずここで
+  // (1)同一発話の再送を弾く (2)音声認識バッファを確実にリセットする。
+  const sendGuardRef = useRef(false);
+  const lastSentRef = useRef("");
+  // speech自体はこのコールバック定義より後に生成されるため、直接参照させず
+  // ref経由で呼ぶ(App.tsxの既存パターンを踏襲)。
+  const speechResetRef = useRef<() => void>(() => {});
+
+  const sendTranscript = useCallback(
+    (text: string) => {
+      const message = text.trim();
+      if (!message || sendGuardRef.current) return;
+      if (message === lastSentRef.current) {
+        // 認識エンジンの再送クセ等による同一発話の再発火。送信はしないが、
+        // 確定バッファはここで必ず破棄する。破棄しないと、この古いテキストが
+        // 次に来る本当に新しい発話へ連結されて送られてしまう。
+        setDraft("");
+        speechResetRef.current();
+        return;
+      }
+      sendGuardRef.current = true;
+      queueMicrotask(() => {
+        sendGuardRef.current = false;
+      });
+      lastSentRef.current = message;
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      setDraft("");
+      tts.cancel(); // 送信したら進行中の読み上げは止める
+      speechResetRef.current(); // 音声認識の確定バッファも必ず破棄する
+      enqueue(message);
+    },
+    [enqueue, tts],
+  );
+
+  const submitDraft = useCallback(() => {
+    sendTranscript(draftRef.current);
+  }, [sendTranscript]);
 
   const isEcho = useCallback((text: string) => isLikelyEcho(text, ttsRef.current.recentSpokenTexts()), []);
 
@@ -145,17 +182,12 @@ export function useVoiceCoreVoice({
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (!current.trim()) return;
       silenceTimerRef.current = setTimeout(() => {
-        const v = draftRef.current.trim();
-        setDraft("");
-        if (v) enqueue(v);
+        sendTranscript(draftRef.current);
       }, autoSendMs());
     },
-    [enqueue, autoSendMs],
+    [sendTranscript, autoSendMs],
   );
 
-  // speech自体はこのコールバック定義より後に生成されるため、直接participateさせず
-  // ref経由で呼ぶ(App.tsxの既存パターンを踏襲)。
-  const speechResetRef = useRef<() => void>(() => {});
   const speech = useSpeechRecognition({
     lang: "ja-JP",
     isEcho,
@@ -167,10 +199,10 @@ export function useVoiceCoreVoice({
       if (ttsRef.current.isSpeaking() && t.finals.length) ttsRef.current.cancel(); // バージイン
       const sendCmd = classify(whole, projectNamesRef.current).send;
       if (sendCmd.triggered && sendCmd.body) {
-        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-        setDraft("");
+        sendTranscript(sendCmd.body);
+        // 送信された/弾かれたに関わらずバッファを掃除する。認識結果の再発火が
+        // 累積して別本文を生み二重送信になるのを断つ(App.tsxの既存パターン)。
         speechResetRef.current();
-        enqueue(sendCmd.body);
         return;
       }
       setDraft(whole);
@@ -182,6 +214,7 @@ export function useVoiceCoreVoice({
   speechResetRef.current = () => speech.reset();
 
   const startMic = useCallback(() => {
+    lastSentRef.current = ""; // 録音を入れ直したら同一発話ガードを解除する
     speech.start();
   }, [speech]);
   const stopMic = useCallback(() => {
@@ -222,6 +255,5 @@ export function useVoiceCoreVoice({
     ttsEnabled: tts.enabled,
     toggleTts: () => tts.setEnabled(!tts.enabled),
     pending: dispatchQueue.pending,
-    enqueue,
   };
 }
