@@ -6,10 +6,12 @@ export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
-      // ルート(/)は静的なUI Hub、React版(classic)は /classic.html の2エントリ構成
+      // ルート(/)は静的なUI Hub、React版(classic)は /classic.html、
+      // VoiceCore(radial)は /radial.html(React+Chakra UI) の3エントリ構成
       input: {
         hub: resolve(__dirname, "index.html"),
         classic: resolve(__dirname, "classic.html"),
+        radial: resolve(__dirname, "radial.html"),
       },
     },
   },
